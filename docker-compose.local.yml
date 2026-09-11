@@ -1,0 +1,31 @@
+# Optional local port overrides; the base Compose already binds to loopback.
+services:
+  postgresql:
+    ports: !override
+      - "127.0.0.1:${POSTGRES_PORT:-18432}:5432"
+  temporal-db:
+    ports: !override
+      - "127.0.0.1:${TEMPORAL_DB_PORT:-18433}:5432"
+  redis:
+    ports: !override
+      - "127.0.0.1:${REDIS_PORT:-18379}:6379"
+  minio:
+    ports: !override
+      - "127.0.0.1:${MINIO_API_PORT:-19200}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-19201}:9001"
+  temporal:
+    ports: !override
+      - "127.0.0.1:${TEMPORAL_PORT:-17333}:7233"
+  temporal-ui:
+    ports: !override
+      - "127.0.0.1:${TEMPORAL_UI_PORT:-18182}:8080"
+  api:
+    ports: !override
+      - "127.0.0.1:${API_PORT:-18181}:8080"
+  frontend:
+    ports: !override
+      - "127.0.0.1:${FRONTEND_PORT:-13100}:3000"
+  caddy:
+    ports: !override
+      - "127.0.0.1:${HTTP_PORT:-18180}:80"
+      - "127.0.0.1:${HTTPS_PORT:-18543}:443"

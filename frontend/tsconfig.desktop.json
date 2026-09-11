@@ -1,0 +1,34 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "plugins": [],
+    "incremental": false,
+    "types": [
+      "vite/client",
+      "node"
+    ],
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ],
+      "next/link": [
+        "./src/desktop/router.tsx"
+      ],
+      "next/navigation": [
+        "./src/desktop/router.tsx"
+      ],
+      "next/dynamic": [
+        "./src/desktop/dynamic.tsx"
+      ]
+    }
+  },
+  "include": [
+    "src/desktop/**/*.ts",
+    "src/desktop/**/*.tsx",
+    "src/react-katex.d.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

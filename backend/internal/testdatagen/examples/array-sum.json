@@ -1,0 +1,59 @@
+{
+  "tool": "generate_cases",
+  "recipe": {
+    "version": "algoforge.testdata.v1",
+    "code": "void generate(long long i, long long g, af::Random& rng, std::ostream& out) {\n    std::vector<long long> a;\n    switch (i) {\n    case 0: a = {0}; break;\n    case 1: a.assign(40000, 1000000000LL); break;\n    case 2: a = {-1000000000LL, -1000000000LL, -1000000000LL}; break;\n    case 3: a = {1000000000LL, -1000000000LL}; break;\n    case 4: a.assign(20, 0); break;\n    case 5: a = rng.array(20, -1000000000LL, -1); break;\n    case 6:\n        a.resize(21);\n        for (int j=0; j<21; ++j) a[j] = j%2 ? -1000000000LL : 1000000000LL;\n        break;\n    case 7: a = {1000000000LL, 1000000000LL, 147483647}; break;\n    case 8: a = {1000000000LL, 1000000000LL, 147483648}; break;\n    case 9: a = rng.array(1000, -1000000000LL, 1000000000LL); break;\n    default: throw std::invalid_argument(\"array-sum example supports case indices 0..9\");\n    }\n    out << a.size() << '\\n';\n    af::line(out, a);\n}"
+  },
+  "cases": [
+    {
+      "index": 0,
+      "group_id": 0,
+      "purpose": "最小输入与零"
+    },
+    {
+      "index": 1,
+      "group_id": 0,
+      "purpose": "最大规模与正向溢出"
+    },
+    {
+      "index": 2,
+      "group_id": 0,
+      "purpose": "负向溢出"
+    },
+    {
+      "index": 3,
+      "group_id": 0,
+      "purpose": "正负抵消"
+    },
+    {
+      "index": 4,
+      "group_id": 0,
+      "purpose": "重复零值"
+    },
+    {
+      "index": 5,
+      "group_id": 0,
+      "purpose": "全负数"
+    },
+    {
+      "index": 6,
+      "group_id": 0,
+      "purpose": "奇数长度正负交替"
+    },
+    {
+      "index": 7,
+      "group_id": 0,
+      "purpose": "32位上界"
+    },
+    {
+      "index": 8,
+      "group_id": 0,
+      "purpose": "32位上界加一"
+    },
+    {
+      "index": 9,
+      "group_id": 0,
+      "purpose": "有符号随机覆盖"
+    }
+  ]
+}

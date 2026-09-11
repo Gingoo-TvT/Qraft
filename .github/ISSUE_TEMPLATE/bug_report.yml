@@ -1,0 +1,21 @@
+name: 问题反馈
+description: 报告可复现的问题
+body:
+  - type: input
+    id: version
+    attributes:
+      label: 版本与环境
+      placeholder: Qraft 2.1.0 / Windows 11 / 连接已有服务
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤、期望结果与实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志或截图
+      description: 请移除 API Key、个人信息和题库中的非公开内容。

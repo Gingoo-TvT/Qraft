@@ -1,0 +1,27 @@
+{
+  "config": {
+    "mode": "mixed",
+    "requirements": "概念与应用并重",
+    "distribution": [
+      {
+        "type": "choice",
+        "count": 2,
+        "score": 10
+      },
+      {
+        "type": "programming",
+        "count": 2,
+        "score": 40
+      }
+    ]
+  },
+  "filter": {
+    "tags": [],
+    "keyword": "",
+    "min_difficulty": 800,
+    "max_difficulty": 2400,
+    "quiz_difficulty": "",
+    "exclude_recent_sets": 2,
+    "seed": "review-150"
+  }
+}

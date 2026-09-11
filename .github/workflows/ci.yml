@@ -1,0 +1,179 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release_ref:
+        description: Git ref to validate as the stable release
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector@sha256:7d400e340efb42f4d8c9c12c6427adb253f726881a9985d2a471bf0eed824dff
+        env:
+          POSTGRES_USER: algoforge
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: algoforge_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U algoforge -d algoforge_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref || github.ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - run: go test ./... -count=1
+      - run: go vet ./...
+      - run: go build ./...
+      - name: Verify migrations and set integration on disposable PostgreSQL
+        env:
+          DATABASE_URL: postgres://algoforge:disposable-ci-only@localhost:5432/algoforge_ci?sslmode=disable
+          ALGOFORGE_INTEGRATION_DISPOSABLE_DB: 'true'
+        run: |
+          go run ./cmd/migrate up
+          go run ./cmd/migrate up
+          # These packages share the disposable database; serialize recent-set assertions.
+          go test -p 1 -tags=integration ./internal/repository ./internal/service ./internal/handler -run 'TestProblemSet|TestAssemblyBank' -count=1 -v
+
+
+  sandbox:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sandbox
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref || github.ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: sandbox/go.mod
+          cache: false
+      - run: go test ./... -count=1
+      - run: go vet ./...
+      - run: go build ./...
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run build:desktop
+
+  repository:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 scripts/check-repository.py
+      - run: python3 -m unittest discover -s scripts -p '*_test.py'
+      - name: Check clean self-host configuration
+        run: |
+          python3 scripts/configure.py
+          docker compose config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.local.yml config --quiet
+
+  container-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref || github.ref }}
+      - name: Bind checkout revision
+        shell: bash
+        run: echo "SOURCE_REVISION=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Build backend runtime and migration images
+        run: |
+          docker build --target production --build-arg SOURCE_REVISION="$SOURCE_REVISION" -t qraft-api:ci backend
+          docker build --target migrations --build-arg SOURCE_REVISION="$SOURCE_REVISION" -t qraft-migrations:ci backend
+      - name: Build frontend image
+        run: docker build --target production --build-arg SOURCE_REVISION="$SOURCE_REVISION" -t qraft-frontend:ci frontend
+      - name: Build sandbox image
+        run: docker build --build-arg SANDBOX_REVISION="$SOURCE_REVISION" -t qraft-sandbox:ci sandbox
+      - name: Verify image revision labels
+        shell: bash
+        run: |
+          for image in qraft-api:ci qraft-migrations:ci qraft-frontend:ci qraft-sandbox:ci; do
+            test "$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$SOURCE_REVISION"
+          done
+
+
+  desktop:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref || github.ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+      - run: go test ./... -count=1
+      - run: go vet ./...
+      - run: go build ./...
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build the bundled desktop workbench
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build:desktop
+      - name: Compile the Windows GUI with bundled assets
+        if: runner.os == 'Windows'
+        run: go build -mod=vendor -o Qraft-smoke.exe ./cmd/qraft
+      - name: Verify WebView permission patch
+        shell: python
+        run: |
+          from pathlib import Path
+          source = Path("vendor/github.com/jchv/go-webview2/webview.go").read_text()
+          assert "SetPermission(edge.CoreWebView2PermissionKindClipboardRead, edge.CoreWebView2PermissionStateDefault)" in source
+      - name: Verify runtime derives from server configuration
+        if: runner.os == 'Linux'
+        run: |
+          python3 -m pip install PyYAML==6.0.2
+          python3 scripts/prepare-runtime.py --check

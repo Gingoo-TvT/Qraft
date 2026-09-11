@@ -1,0 +1,28 @@
+{
+  "schema_version": "algoforge.s3-regression-set.v1",
+  "dataset_id": "algoforge-s3-fixed-20",
+  "dataset_revision": "v1-2026-08-26",
+  "retired_qg01_baseline_sha256": "f91d2e982c3d4bcd623b829e51a0df3d7585304ffd66bafb75a9fea536b18950",
+  "cases": [
+    {"case_id":"s3-new-01","revision_seed":"s3-new-01-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-02","revision_seed":"s3-new-02-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-03","revision_seed":"s3-new-03-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-04","revision_seed":"s3-new-04-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-05","revision_seed":"s3-new-05-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-06","revision_seed":"s3-new-06-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-07","revision_seed":"s3-new-07-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-08","revision_seed":"s3-new-08-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-09","revision_seed":"s3-new-09-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-10","revision_seed":"s3-new-10-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-11","revision_seed":"s3-new-11-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-12","revision_seed":"s3-new-12-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-13","revision_seed":"s3-new-13-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-14","revision_seed":"s3-new-14-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-15","revision_seed":"s3-new-15-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-16","revision_seed":"s3-new-16-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-17","revision_seed":"s3-new-17-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-18","revision_seed":"s3-new-18-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-19","revision_seed":"s3-new-19-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true},
+    {"case_id":"s3-new-20","revision_seed":"s3-new-20-v1","scenario":"pass","expected_decision":"pass","expected_reviewer_invoked":true}
+  ]
+}

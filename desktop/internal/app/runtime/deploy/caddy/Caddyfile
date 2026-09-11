@@ -1,0 +1,27 @@
+{
+    admin off
+    auto_https off
+}
+:80 {
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+    handle /health {
+        reverse_proxy api:8080
+    }
+    handle /api/* {
+        reverse_proxy api:8080 {
+            transport http {
+                dial_timeout 5s
+                response_header_timeout 60s
+            }
+        }
+    }
+    handle {
+        reverse_proxy frontend:3000
+    }
+    encode gzip
+}

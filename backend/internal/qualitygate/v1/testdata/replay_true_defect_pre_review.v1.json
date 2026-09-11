@@ -1,0 +1,9 @@
+{
+  "schema_version": "algoforge.s3-quality-replay.v1",
+  "replay_id": "known-true-defect-pre-review-v1",
+  "revision_seed": "known-true-defect-pre-review-v1",
+  "scenario": "spec_blocked",
+  "expected_decision": "quarantine",
+  "expected_reviewer_invoked": false,
+  "purpose": "A known undefined-variable specification defect must be blocked before any reviewer model call."
+}

@@ -1,0 +1,18 @@
+{
+  "title": "算法训练赛",
+  "kind": "contest",
+  "desired_item_count": 6,
+  "cooldown_sets": 0,
+  "start_generation": true,
+  "generation_config": {
+    "mode": "programming",
+    "requirements": "纯编程比赛，前易后难，覆盖不同算法范式；题面严谨，内部提示不进入参赛者题面。",
+    "distribution": [
+      {
+        "type": "programming",
+        "count": 6,
+        "score": 100
+      }
+    ]
+  }
+}

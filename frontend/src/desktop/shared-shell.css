@@ -1,0 +1,20 @@
+/* The native client uses the same workspace shell as the Web app.
+   Only client-specific actions, preferences and the connection status are added. */
+.af-desktop{line-height:1.6}
+.af-desktop .af-content{scroll-behavior:auto;overscroll-behavior:contain}
+.af-client-links{display:flex;align-items:center;gap:12px;padding:9px 12px 1px}
+.af-client-links>a{display:flex;align-items:center;gap:6px;min-width:0;color:var(--dm);font-size:12px;white-space:nowrap}
+.af-client-links>a:hover{color:var(--da)}
+.af-desktop.is-collapsed .af-client-links{flex-direction:column;padding:8px 0 0}
+.af-desktop.is-collapsed .af-client-links span{display:none}
+.af-desktop .af-topbar .desktop-toolbar-icon{width:36px;height:36px;border-radius:7px}
+.af-desktop .af-topbar .desktop-toolbar-icon svg{width:19px;height:19px}
+.af-desktop .desktop-statusbar{min-height:28px;background:var(--ds);padding-inline:20px;font-size:12px}
+.af-desktop .desktop-settings,.af-desktop .desktop-exports{max-width:1440px;width:100%;padding:32px 36px 40px}
+[data-density=compact] .af-desktop .af-page{padding:24px 28px 32px}
+[data-density=compact] .af-desktop .af-nav-item{min-height:36px;padding-block:8px}
+[data-density=compact] .af-desktop .af-nav-group{margin-bottom:12px}
+@media(max-width:1200px){.af-desktop .desktop-settings,.af-desktop .desktop-exports{padding:28px}}
+@media(max-width:900px){.af-desktop .af-client-links{flex-direction:row;padding:9px 12px 1px}.af-desktop .af-client-links span{display:inline}.af-desktop .desktop-statusbar-hint{display:none}.af-desktop .desktop-statusbar{justify-content:space-between}}
+@media(max-width:640px){.af-desktop .desktop-settings,.af-desktop .desktop-exports{padding:22px 18px 30px}}
+@media(max-width:420px){.af-desktop .af-search{width:calc(100vw - 152px)}}

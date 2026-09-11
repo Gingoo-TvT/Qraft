@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "workflow_type": "ProblemGenerationWorkflow",
+  "workflow_id": "s0-review-ack-4a4363f3-d55a-48cf-9481-b2a446c79ebd",
+  "run_id": "97fad851-7426-404a-9a74-2662ca351e8f",
+  "source_revision": "9ead77799a8c1ed4a2dfe9a1b743c362f55eb132",
+  "temporal_server_version": "1.25.2",
+  "temporal_go_sdk_version": "1.30.1",
+  "scenario": "v1 Approved=false waits on the 72h review timer, consumes a tokened approval signal, stores once, and completes",
+  "event_count": 84,
+  "history_file": "problem_generation_review_gate_v1.json",
+  "history_sha256": "a92dc50acba185def43fd054a66e6de2540017d5b61183b97d925142022da1ee",
+  "sanitization": "Workflow and activity payloads are synthetic fixtures. Worker host identities have been replaced with synthetic-replay-worker; no credentials or restricted data are present.",
+  "capture_command": "ALGOFORGE_TEMPORAL_INTEGRATION=true TEMPORAL_ADDRESS=127.0.0.1:7233 go test -tags=integration -count=1 ./internal/handler -run TestReviewDecisionConcurrentHTTPTemporalIntegration/approve_signal_wins -v; export the exact workflow/run history with the Temporal Go client"
+}

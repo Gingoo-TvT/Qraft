@@ -1,0 +1,110 @@
+# =============================================================================
+# Qraft — Caddy Reverse Proxy Configuration
+# =============================================================================
+#
+# In production, replace {$DOMAIN:http://localhost} with your actual domain and Caddy
+# will automatically provision and renew TLS certificates via Let's Encrypt.
+# =============================================================================
+
+{
+	# Global options
+	admin off
+	log {
+		level INFO
+		format console
+	}
+}
+
+{$DOMAIN:http://localhost} {
+	# -------------------------------------------------------------------------
+	# Security Headers
+	# -------------------------------------------------------------------------
+	header {
+		X-Content-Type-Options    nosniff
+		X-Frame-Options           DENY
+		X-XSS-Protection          "1; mode=block"
+		Referrer-Policy            strict-origin-when-cross-origin
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		-Server
+	}
+
+	# -------------------------------------------------------------------------
+	# API — Reverse proxy to backend
+	# -------------------------------------------------------------------------
+	handle /health {
+		reverse_proxy api:8080
+	}
+
+	handle /api/* {
+		reverse_proxy api:8080 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+
+			# Health checking
+			health_uri      /health
+			health_interval 15s
+			health_timeout  5s
+			health_status   200
+
+			# Timeouts
+			transport http {
+				dial_timeout     5s
+				response_header_timeout 30s
+				read_timeout     60s
+				write_timeout    60s
+			}
+		}
+	}
+
+	# -------------------------------------------------------------------------
+	# WebSocket — Upgrade support for real-time features
+	# -------------------------------------------------------------------------
+	handle /api/ws/* {
+		reverse_proxy api:8080 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up Connection {>Connection}
+			header_up Upgrade {>Upgrade}
+		}
+	}
+
+	# -------------------------------------------------------------------------
+	# Temporal UI — Internal dashboard (restrict in production)
+	# -------------------------------------------------------------------------
+	handle /temporal/* {
+		uri strip_prefix /temporal
+		reverse_proxy temporal-ui:8080
+	}
+
+	# -------------------------------------------------------------------------
+	# Frontend — Next.js application (catch-all)
+	# -------------------------------------------------------------------------
+	handle {
+		reverse_proxy frontend:3000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+
+			health_uri      /
+			health_interval 15s
+			health_timeout  5s
+			health_status   200
+		}
+	}
+
+	# -------------------------------------------------------------------------
+	# Compression
+	# -------------------------------------------------------------------------
+	encode zstd gzip
+
+	# -------------------------------------------------------------------------
+	# Access Logging
+	# -------------------------------------------------------------------------
+	log {
+		output stdout
+		format json
+		level INFO
+	}
+}

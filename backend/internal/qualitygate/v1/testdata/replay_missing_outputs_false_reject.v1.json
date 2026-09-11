@@ -1,0 +1,9 @@
+{
+  "schema_version": "algoforge.s3-quality-replay.v1",
+  "replay_id": "missing-outputs-false-reject-v1",
+  "revision_seed": "missing-outputs-false-reject-v1",
+  "scenario": "approved_false_pass",
+  "expected_decision": "pass",
+  "expected_reviewer_invoked": true,
+  "purpose": "A reviewer approved=false suggestion caused only by expected outputs not being displayed cannot override complete passing server evidence."
+}

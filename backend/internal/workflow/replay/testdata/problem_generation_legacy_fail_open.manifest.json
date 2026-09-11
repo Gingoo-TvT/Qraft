@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "workflow_type": "ProblemGenerationWorkflow",
+  "workflow_id": "s0-legacy-review-fail-open-fixture",
+  "run_id": "fbc11df5-3ef7-4017-952c-2d7f568eb926",
+  "source_revision": "0f25c01b9a211b128e5ef1afaa5244b540c5f28d",
+  "temporal_server_version": "1.25.2",
+  "temporal_go_sdk_version": "1.30.1",
+  "scenario": "Approved=false and RequireReview=false followed by legacy StoreProblemActivity",
+  "event_count": 75,
+  "captured_at": "2026-07-16T09:03:42.151437967Z",
+  "history_file": "problem_generation_legacy_fail_open.json",
+  "history_sha256": "ee13870e9adf867c931a45f2da70e301a311fdf3d8a9a66d1f15c8c3406db6ff",
+  "sanitization": "synthetic inputs and outputs; no credentials or user data"
+}

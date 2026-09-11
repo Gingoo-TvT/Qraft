@@ -1,0 +1,33 @@
+{
+  "title": "数据结构综合练习",
+  "kind": "mock_exam",
+  "desired_item_count": 6,
+  "cooldown_sets": 0,
+  "start_generation": true,
+  "generation_config": {
+    "mode": "mixed",
+    "requirements": "概念辨析与应用并重，前易后难，覆盖不同知识点，题目之间不泄露答案。",
+    "distribution": [
+      {
+        "type": "choice",
+        "count": 2,
+        "score": 5
+      },
+      {
+        "type": "fill_blank",
+        "count": 1,
+        "score": 5
+      },
+      {
+        "type": "judge",
+        "count": 1,
+        "score": 5
+      },
+      {
+        "type": "programming",
+        "count": 2,
+        "score": 40
+      }
+    ]
+  }
+}

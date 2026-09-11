@@ -1,0 +1,54 @@
+{
+  "schema_version": "algoforge.product.custom-generation.request.v1",
+  "domain": {
+    "name": "competitive_programming",
+    "level": "algorithm",
+    "knowledge_points": ["dp", "prefix-sum"],
+    "combination": {
+      "mode": "set",
+      "max_concepts": 3
+    }
+  },
+  "difficulty": {
+    "rating": 1800,
+    "tolerance": 0,
+    "calibration_profile": "default"
+  },
+  "problem_type": "standard",
+  "constraints": {
+    "time_limit_ms": 2000,
+    "memory_limit_mb": 256,
+    "test_case_count": 24,
+    "sample_count": 2,
+    "max_input_bytes": 0,
+    "max_output_bytes": 0
+  },
+  "quality": {
+    "strategy": "baseline",
+    "dedup_mode": "reject",
+    "similar_limit": 3,
+    "budget": {
+      "max_llm_calls": 0,
+      "max_tokens": 0,
+      "max_wall_time_seconds": 3600,
+      "max_regenerations": 0
+    },
+    "audit_profiles": []
+  },
+  "candidate_count": 1,
+  "output": {
+    "evidence_level": "minimal",
+    "formats": ["algoforge"],
+    "include_editorial": true,
+    "include_solutions": true,
+    "include_test_data": true
+  },
+  "locale": "zh",
+  "languages": ["cpp"],
+  "contest_style": "icpc",
+  "custom_requirements": "Prefer a controllable two-concept interaction.",
+  "runtime": {
+    "statement_profile": "default-statement",
+    "verification_profile": "default-verification"
+  }
+}

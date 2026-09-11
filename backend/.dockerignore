@@ -1,0 +1,10 @@
+/.DS_Store
+/.env
+/.env.*
+/.next
+/api
+/bin
+/coverage.out
+/worker
+*.log
+*.test

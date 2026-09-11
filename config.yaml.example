@@ -1,0 +1,49 @@
+# Optional native process settings. Docker deployment uses .env and scripts/configure.py.
+database:
+  host: localhost
+  port: 18432
+  user: qraft
+  pass: "" # Copy the generated DATABASE_PASS from .env for direct native development.
+  dbname: qraft
+  sslmode: disable
+
+redis:
+  addr: localhost:18379
+  password: ""
+  db: 0
+
+minio:
+  endpoint: localhost:19200
+  access_key: "" # Generated MINIO_ROOT_USER
+  secret_key: "" # Generated MINIO_ROOT_PASSWORD
+  bucket: qraft
+  use_ssl: false
+
+temporal:
+  host: localhost:17333
+  namespace: default
+  task_queue: algoforge-tasks
+
+anthropic:
+  api_key: ""
+  base_url: ""
+  model: ""
+
+embedding:
+  api_key: ""
+  base_url: ""
+  model: ""
+  dimensions: 1536
+  timeout_sec: 30
+  enabled: false
+
+sandbox:
+  binary: /usr/local/bin/algoforge-sandbox
+  config_path: /etc/algoforge/sandbox.yaml
+  timeout: 30s
+
+app:
+  port: 8080
+  jwt_secret: ""
+  log_level: info
+  dev_mode: true
