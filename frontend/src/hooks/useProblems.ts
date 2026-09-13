@@ -309,12 +309,15 @@ interface UseTagsReturn {
   tags: TagCategory[];
   loading: boolean;
   error: string | null;
+  refetch: () => void;
 }
 
 export function useTags(): UseTagsReturn {
   const [tags, setTags] = useState<TagCategory[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  const refetch = useCallback(() => setRevision(value => value + 1), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -341,9 +344,9 @@ export function useTags(): UseTagsReturn {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [revision]);
 
-  return { tags, loading, error };
+  return { tags, loading, error, refetch };
 }
 
 // ---------------------------------------------------------------------------

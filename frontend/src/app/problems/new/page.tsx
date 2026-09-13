@@ -71,6 +71,7 @@ export default function NewProblemPage() {
     tags: tagCategories,
     loading: tagsLoading,
     error: tagsError,
+    refetch: refetchTags,
   } = useTags();
   const { selectedLevel, setLevel, testDataConfig } = useAppStore();
 
@@ -224,7 +225,7 @@ export default function NewProblemPage() {
           <FormSection number="02" title="知识范围与难度" description="标签限定知识范围，难度表达预期强度；两者一起参与题目生成。">
             <div className="space-y-3"><div className="flex items-center justify-between gap-4"><label htmlFor="problem-difficulty" className="text-sm font-medium">目标难度</label><span className="text-lg font-semibold tabular-nums">{formState.difficulty}<span className="ml-2 text-xs font-normal text-[var(--dm)]">{getDifficultyLabel(formState.difficulty)}</span></span></div><input id="problem-difficulty" aria-label="目标难度" type="range" min={minDifficulty} max={maxDifficulty} step={DIFFICULTY_STEP} value={formState.difficulty} onChange={(event) => handleFieldChange('difficulty', Number(event.target.value))} className="w-full accent-[var(--da)]" /><div className="flex justify-between text-xs text-[var(--dm)]"><span>{minDifficulty}</span><span>{maxDifficulty}</span></div></div>
             <div className="border-t border-[var(--dl)] pt-5"><div className="mb-3 flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">覆盖标签</h3><span className="af-hint">已选 {formState.tags.length} 项</span></div>
-              {tagsLoading ? <div className="flex items-center gap-2 text-sm text-[var(--dm)]"><Loader2 className="h-4 w-4 animate-spin" />正在加载标签</div> : levelTags.length === 0 ? <p className="af-hint">{tagsError ? '标签加载失败，请检查 API 服务后刷新页面。' : '暂无可用标签。'}</p> : <div className="flex flex-wrap gap-2">{levelTags.map((tag) => <button key={tag.id} type="button" aria-pressed={formState.tags.includes(tag.tag_name)} className={cn('rounded-md border px-3 py-2 text-left text-sm transition-colors', formState.tags.includes(tag.tag_name) ? 'border-[var(--da)] bg-[var(--dg)] text-[var(--da)]' : 'border-[var(--dl)] bg-[var(--dp)] text-[var(--dt)] hover:bg-[var(--dh)]')} onClick={() => handleTagToggle(tag.tag_name)}>{tag.display_name}</button>)}</div>}
+              {tagsLoading ? <div className="flex items-center gap-2 text-sm text-[var(--dm)]"><Loader2 className="h-4 w-4 animate-spin" />正在加载标签</div> : levelTags.length === 0 ? <div className="af-hint"><p>{tagsError ? '标签尚未加载，连接服务后可重试；已填写的需求会保留。' : '暂无可用标签。'}</p>{tagsError && <button type="button" className="forge-btn-secondary mt-3" onClick={refetchTags}>重新加载标签</button>}</div> : <div className="flex flex-wrap gap-2">{levelTags.map((tag) => <button key={tag.id} type="button" aria-pressed={formState.tags.includes(tag.tag_name)} className={cn('rounded-md border px-3 py-2 text-left text-sm transition-colors', formState.tags.includes(tag.tag_name) ? 'border-[var(--da)] bg-[var(--dg)] text-[var(--da)]' : 'border-[var(--dl)] bg-[var(--dp)] text-[var(--dt)] hover:bg-[var(--dh)]')} onClick={() => handleTagToggle(tag.tag_name)}>{tag.display_name}</button>)}</div>}
             </div>
           </FormSection>
           <FormSection number="03" title="表达与解法" description="保持题面风格、题目语言与参考解法的一致性。">
