@@ -66,6 +66,34 @@
 
 ---
 
+## 统一题目搜索
+
+### GET /questions/search
+
+同时检索编程题库与客观题库，返回摘要、总数及统一分页。无需调用模型，也不需要额外搜索服务或数据库迁移。
+
+| 参数 | 说明 |
+|---|---|
+| `q` | 题号/code、UUID、标题、标签名称/标识、知识点名称/编码的部分文字；忽略大小写，`%`、`_` 按普通字符匹配 |
+| `type` | 空为全部；`programming`、`choice`、`fill_blank`、`judge` |
+| `tag` | 标签标识或显示名的部分文字 |
+| `knowledge_point` | 知识点名称或编码的部分文字；编程题使用已有标签分类名称/标识 |
+| `min_difficulty` / `max_difficulty` | 编程题库原有整数评分，范围 800–3500，可只传一端；下限不得高于上限 |
+| `quiz_difficulty` | 客观题库原有 `easy`、`medium`、`hard`；不能与数值评分同时传入 |
+| `page` / `size` | 默认 1 / 20；页码 1–1000000，每页 1–100 |
+
+非空条件之间取交集。三个文本条件各最多 200 个字符。选择数值难度仅搜索编程题库，选择枚举难度仅搜索客观题库；不将两种尺度互相换算。无匹配返回空数组及 `meta.total=0`，超出末页仍返回准确总数。
+
+示例：`GET /api/v1/questions/search?q=图&type=choice&quiz_difficulty=medium&page=1&size=20`
+
+成功响应的 `data` 为摘要数组，每项含 `id`、`source`（`problem` / `quiz`）、`type`、`code`、`title`、`tags`、`knowledge_points`、`updated_at`，以及来源适用的 `difficulty` 或 `quiz_difficulty`（可含 `level`、`status`）。不返回题面、选项、答案、解法或实例配置。结果按更新时间降序、来源和 ID 排序，避免分页顺序不稳定。
+
+详情链接必须按 `source` 决定：`problem` 对应 `/problems/:id`，`quiz` 对应 `/quizzes/:id`。客观题库中兼容保留的 `type=programming` 记录仍归 `quiz`；两库相同 UUID 也是不同记录。
+
+搜索延续共享工作区题库的可见范围，排除隔离、拒绝和已删除的编程题；不增加用户权限或租户隔离。错误参数返回 HTTP 400。旧服务没有本接口时，客户端显示升级提示和原题库入口，不将单库结果当作完整搜索结果。
+
+---
+
 ## 1. 题目管理
 
 ### 1.1 POST /problems/generate

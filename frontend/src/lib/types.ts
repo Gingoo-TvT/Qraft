@@ -1175,3 +1175,30 @@ export interface ProblemSetListFilter {
   page?: number;
   size?: number;
 }
+
+// Unified search preserves the source library and its difficulty scale.
+export interface QuestionSearchFilter {
+  q?: string;
+  type?: QuizType;
+  tag?: string;
+  knowledge_point?: string;
+  min_difficulty?: number;
+  max_difficulty?: number;
+  quiz_difficulty?: QuizDifficulty;
+  page?: number;
+  size?: number;
+}
+export interface QuestionSearchItem {
+  id: string;
+  source: 'problem' | 'quiz';
+  type: QuizType;
+  code: string;
+  title: string;
+  tags: string[];
+  knowledge_points: string[];
+  difficulty?: number;
+  quiz_difficulty?: QuizDifficulty;
+  level?: string;
+  status?: string;
+  updated_at: string;
+}

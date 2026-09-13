@@ -29,6 +29,7 @@ export default function Pagination({
           共 {total} 条，第 {page}/{totalPages} 页
         </span>
         <select
+          aria-label="每页条数"
           className="forge-input w-auto py-1 text-xs"
           value={size}
           onChange={(e) => onSizeChange(Number(e.target.value))}
@@ -44,6 +45,7 @@ export default function Pagination({
       <div className="flex items-center gap-1">
         <button
           className="forge-btn-ghost px-2 py-1"
+          aria-label="上一页"
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
         >
@@ -64,6 +66,8 @@ export default function Pagination({
           return (
             <button
               key={pageNum}
+              aria-label={String(pageNum) + " 页"}
+              aria-current={pageNum === page ? "page" : undefined}
               className={cn(
                 'forge-btn-ghost px-3 py-1 text-sm',
                 pageNum === page &&
@@ -78,6 +82,7 @@ export default function Pagination({
 
         <button
           className="forge-btn-ghost px-2 py-1"
+          aria-label="下一页"
           disabled={page >= totalPages}
           onClick={() => onPageChange(page + 1)}
         >

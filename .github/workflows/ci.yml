@@ -43,7 +43,7 @@ jobs:
       - run: go test ./... -count=1
       - run: go vet ./...
       - run: go build ./...
-      - name: Verify migrations and set integration on disposable PostgreSQL
+      - name: Verify migrations and integration on disposable PostgreSQL
         env:
           DATABASE_URL: postgres://algoforge:disposable-ci-only@localhost:5432/algoforge_ci?sslmode=disable
           ALGOFORGE_INTEGRATION_DISPOSABLE_DB: 'true'
@@ -51,7 +51,7 @@ jobs:
           go run ./cmd/migrate up
           go run ./cmd/migrate up
           # These packages share the disposable database; serialize recent-set assertions.
-          go test -p 1 -tags=integration ./internal/repository ./internal/service ./internal/handler -run 'TestProblemSet|TestAssemblyBank' -count=1 -v
+          go test -p 1 -tags=integration ./internal/repository ./internal/service ./internal/handler -run 'TestProblemSet|TestAssemblyBank|TestQuestionSearch' -count=1 -v
 
 
   sandbox:
@@ -89,6 +89,7 @@ jobs:
       - run: npm audit --audit-level=high
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run lint
+      - run: npm run test:search
       - run: npm run build
       - run: npm run build:desktop
 
