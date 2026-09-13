@@ -12,6 +12,8 @@ import (
 	"github.com/Gingoo-TvT/Qraft/desktop/internal/app"
 )
 
+var applyClientUpdate = flag.String("apply-client-update", "", "Apply a locally verified client update")
+
 var workspace = flag.String("workspace", "", "Connect the bundled workbench to this service")
 var serveUI = flag.Bool("serve-ui", false, "Preview the bundled desktop UI on an ephemeral loopback port")
 var dataDir = flag.String("data-dir", "", "Client data directory")
@@ -23,6 +25,12 @@ var smoke = flag.Bool("smoke-test", false, "Verify native window, page loading a
 
 func main() {
 	flag.Parse()
+	if *applyClientUpdate != "" {
+		if err := app.RunClientUpdate(*applyClientUpdate); err != nil {
+			fatal(err)
+		}
+		return
+	}
 	dir, e := resolveDataDir()
 	if e != nil {
 		fatal(e)

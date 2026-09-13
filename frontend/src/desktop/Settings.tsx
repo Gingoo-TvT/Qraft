@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowUpRight, Check, Download, FolderOpen, HardDrive, Loader2, Monitor, Network, Play, RefreshCw, Settings2, Square, Terminal } from 'lucide-react';
 import type { DesktopConfig } from '@/lib/desktop-runtime';
 import ThemeSettings from './ThemeSettings';
+import ClientUpdateSettings from './ClientUpdateSettings';
 import { navigate, useSearchParams } from './router';
 import { nativeRequest, serviceURL, useDesktop } from './runtime';
 
@@ -79,7 +80,7 @@ export default function Settings() {
      </section>
     </>}
     {section === 'appearance' && <ThemeSettings />}
-    {section === 'about' && <section className="desktop-panel desktop-settings-panel"><div className="desktop-about-mark">Q</div><h2>Qraft · 题构</h2><p>完整桌面工作台 · v{state.version}</p><p>题目创作、独立校验与题集编排，共用同一套服务能力。</p><dl className="desktop-details"><dt>客户端数据目录</dt><dd>{state.data_dir}</dd><dt>服务版本</dt><dd>{connection?.release_version || '未连接'}</dd></dl><div className="desktop-form-actions"><button className="desktop-subtle-button" onClick={() => void external('https://github.com/Gingoo-TvT/Qraft/releases')}><ArrowUpRight size={14} />版本与下载</button><button className="desktop-subtle-button" onClick={() => void external('https://github.com/Gingoo-TvT/Qraft/blob/main/docs/windows-desktop.md')}>使用说明</button></div></section>}
+    {section === 'about' && <><ClientUpdateSettings /><section className="desktop-panel desktop-settings-panel"><div className="desktop-about-mark">Q</div><h2>Qraft · 题构</h2><p>完整桌面工作台 · v{state.version}</p><p>题目创作、独立校验与题集编排，共用同一套服务能力。</p><dl className="desktop-details"><dt>客户端数据目录</dt><dd>{state.data_dir}</dd><dt>服务版本</dt><dd>{connection?.release_version || '未连接'}</dd></dl><div className="desktop-form-actions"><button className="desktop-subtle-button" onClick={() => void external('https://github.com/Gingoo-TvT/Qraft/releases')}><ArrowUpRight size={14} />版本与下载</button><button className="desktop-subtle-button" onClick={() => void external('https://github.com/Gingoo-TvT/Qraft/blob/main/docs/windows-desktop.md')}>使用说明</button></div></section></>}
    </div>
   </div>
  </div>;

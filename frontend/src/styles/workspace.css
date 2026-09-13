@@ -79,6 +79,8 @@ html[data-web-workspace] body{background:var(--db);color:var(--dt)}
 .af-form-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:28px;align-items:start}
 .af-form-main{display:flex;flex-direction:column;gap:24px;min-width:0}
 .af-form-rail{min-width:0;position:sticky;top:24px;display:flex;flex-direction:column;gap:20px}
+/* Action summaries scroll as a whole, so short viewports and growing tag lists keep their buttons reachable. */
+.af-form-rail:has(>.af-summary>.af-sticky-actions){position:static}
 .af-form-section{min-width:0;background:var(--dp);border:1px solid var(--dl);border-radius:12px;scroll-margin-top:24px}
 .af-form-section-heading{display:flex;align-items:flex-start;gap:12px;padding:23px 24px 20px;border-bottom:1px solid var(--dl)}
 .af-form-section-heading h2{font-size:16px;line-height:25px;font-weight:600;margin:0;color:var(--dt)}
@@ -95,6 +97,7 @@ html[data-web-workspace] body{background:var(--db);color:var(--dt)}
 .af-summary-row strong{font-weight:600}
 .af-summary>.forge-btn,.af-summary>.forge-btn-primary,.af-summary>.forge-btn-secondary{width:100%;margin-top:18px}
 .af-sticky-actions{position:sticky;bottom:0;z-index:10;display:flex;justify-content:flex-end;align-items:center;gap:12px;flex-wrap:wrap;padding:18px 0;background:var(--db);border-top:1px solid var(--dl)}
+.af-summary>.af-sticky-actions{position:static;z-index:auto;background:transparent}
 .af-table-panel{min-width:0;background:var(--dp);border:1px solid var(--dl);border-radius:12px;overflow:hidden;color:var(--dt)}
 .af-table-panel>.af-toolbar,.af-table-panel>:first-child>.af-toolbar{padding:20px 22px}
 .af-table-panel>.af-toolbar{border-bottom:1px solid var(--dl)}
