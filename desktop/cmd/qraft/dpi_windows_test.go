@@ -36,7 +36,15 @@ func TestNativeWindowDPIAwarenessAndSuggestedResize(t *testing.T) {
 		t.Fatalf("unexpected window DPI: %d", dpi)
 	}
 	t.Logf("process awareness=%d, window DPI=%d, Per Monitor v2=%v", processDPIAwareness(), windowDPI(hwnd), windowUsesPerMonitorV2(hwnd))
-	want := windowRect{left: 120, top: 80, right: 1320, bottom: 980}
+	// Windows caps a top-level window at the monitor's maximum tracking size.
+	// Use a valid suggested rectangle even on a small CI display; the pure
+	// geometry tests cover the fixed design sizes across 100–200% scaling.
+	work := windowWorkArea(hwnd)
+	width, height := min(1200, int(work.right-work.left)-64), min(900, int(work.bottom-work.top)-64)
+	if width <= 0 || height <= 0 {
+		t.Fatalf("invalid monitor work area: %+v", work)
+	}
+	want := windowRect{left: work.left + 32, top: work.top + 32, right: work.left + 32 + int32(width), bottom: work.top + 32 + int32(height)}
 	minW, minH := 0, 0
 	resizeForDPI(hwnd, 144, want, func(w, h int) { minW, minH = w, h })
 	var got windowRect
@@ -47,11 +55,12 @@ func TestNativeWindowDPIAwarenessAndSuggestedResize(t *testing.T) {
 	if got != want {
 		t.Fatalf("rectangle=%+v, want %+v", got, want)
 	}
-	if minW != 1200 || minH != 900 {
-		t.Fatalf("minimum=%dx%d, must fit suggested bounds at 150%% DPI", minW, minH)
+	// 850×620 design pixels become 1275×930 physical pixels at 150%.
+	if minW != min(1275, width) || minH != min(930, height) {
+		t.Fatalf("minimum=%dx%d, want %dx%d at 150%% DPI within suggested bounds", minW, minH, min(1275, width), min(930, height))
 	}
 	positionInitialWindow(hwnd, func(w, h int) { minW, minH = w, h })
-	work := windowWorkArea(hwnd)
+	work = windowWorkArea(hwnd)
 	ok, _, err = user32.NewProc("GetWindowRect").Call(hwnd, uintptr(unsafe.Pointer(&got)))
 	if ok == 0 {
 		t.Fatal(err)
