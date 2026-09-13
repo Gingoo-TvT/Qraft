@@ -73,8 +73,15 @@ func resizeForDPI(hwnd uintptr, dpi int, rect windowRect, setMinimum func(int, i
 		0x0004|0x0010) // SWP_NOZORDER | SWP_NOACTIVATE
 }
 
+var copyNativeMemory = windows.NewLazySystemDLL("ntdll.dll").NewProc("RtlMoveMemory")
+
 func suggestedDPIRect(lp uintptr) windowRect {
-	return *(*windowRect)(unsafe.Pointer(lp))
+	// LPARAM is also used for packed integers, so the WndProc must keep it as
+	// uintptr. Only WM_DPICHANGED supplies this native RECT address. Copy its
+	// contents through Win32 instead of converting the address to a Go pointer.
+	var rect windowRect
+	_, _, _ = copyNativeMemory.Call(uintptr(unsafe.Pointer(&rect)), lp, unsafe.Sizeof(rect))
+	return rect
 }
 
 func primaryWorkArea() windowRect {

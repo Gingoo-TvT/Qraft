@@ -4,8 +4,11 @@ package main
 
 import (
 	"runtime"
+	"syscall"
 	"testing"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 func TestNativeWindowDPIAwarenessAndSuggestedResize(t *testing.T) {
@@ -45,8 +48,44 @@ func TestNativeWindowDPIAwarenessAndSuggestedResize(t *testing.T) {
 		t.Fatalf("invalid monitor work area: %+v", work)
 	}
 	want := windowRect{left: work.left + 32, top: work.top + 32, right: work.left + 32 + int32(width), bottom: work.top + 32 + int32(height)}
+	// Use native memory and SendMessageW, matching the lifetime and integer
+	// LPARAM of a Windows-provided WM_DPICHANGED rectangle.
+	kernel32 := windows.NewLazySystemDLL("kernel32.dll")
+	nativeRect, _, err := kernel32.NewProc("LocalAlloc").Call(0, unsafe.Sizeof(want))
+	if nativeRect == 0 {
+		t.Fatal(err)
+	}
+	defer kernel32.NewProc("LocalFree").Call(nativeRect)
+	_, _, _ = copyNativeMemory.Call(nativeRect, uintptr(unsafe.Pointer(&want)), unsafe.Sizeof(want))
 	minW, minH := 0, 0
-	resizeForDPI(hwnd, 144, want, func(w, h int) { minW, minH = w, h })
+	var copied windowRect
+	var previousProc uintptr
+	callback := syscall.NewCallback(func(h uintptr, msg uint32, wp, lp uintptr) uintptr {
+		if msg == wmDPIChanged {
+			copied = suggestedDPIRect(lp)
+			resizeForDPI(h, int(wp&0xffff), copied, func(w, h int) { minW, minH = w, h })
+			return 0
+		}
+		if msg == 0x8000 { // An ordinary message may carry a small integer LPARAM.
+			runtime.GC()
+			return lp
+		}
+		result, _, _ := user32.NewProc("CallWindowProcW").Call(previousProc, h, uintptr(msg), wp, lp)
+		return result
+	})
+	previousProc, _, err = user32.NewProc("SetWindowLongPtrW").Call(hwnd, ^uintptr(3), callback)
+	if previousProc == 0 {
+		t.Fatal(err)
+	}
+	defer user32.NewProc("SetWindowLongPtrW").Call(hwnd, ^uintptr(3), previousProc)
+	_, _, _ = user32.NewProc("SendMessageW").Call(hwnd, wmDPIChanged, 144|144<<16, nativeRect)
+	if copied != want {
+		t.Fatalf("DPI message copied %+v, want %+v", copied, want)
+	}
+	integer, _, _ := user32.NewProc("SendMessageW").Call(hwnd, 0x8000, 0, 1)
+	if integer != 1 {
+		t.Fatalf("integer LPARAM changed: %d", integer)
+	}
 	var got windowRect
 	ok, _, err := user32.NewProc("GetWindowRect").Call(hwnd, uintptr(unsafe.Pointer(&got)))
 	if ok == 0 {
