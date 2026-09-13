@@ -20,7 +20,7 @@ python3 -m pip install PyYAML==6.0.2
 go -C backend test ./... -count=1
 go -C desktop test -race ./... -count=1
 go -C sandbox test ./... -count=1
-(cd frontend && npm run test:search && npm run lint && npm run build && npm run build:desktop)
+(cd frontend && npm run test:search && npm run test:desktop && npm run lint && npm run build && npm run build:desktop)
 python3 desktop/scripts/prepare-runtime.py --check
 python3 scripts/check-repository.py
 ```

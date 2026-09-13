@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint src --ext .js,.jsx,.ts,.tsx --max-warnings=0",
     "build:desktop": "tsc -p tsconfig.desktop.json && vite build --config desktop.config.mjs",
-    "test:search": "node --test src/lib/question-search-*.test.cjs"
+    "test:search": "node --test src/lib/question-search-*.test.cjs",
+    "test:desktop": "node --test src/desktop/*.test.cjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",
