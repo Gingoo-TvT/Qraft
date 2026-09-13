@@ -2,7 +2,7 @@ package handler
 
 import "github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 
-const integrationReleaseVersion = "2.1.0"
+const integrationReleaseVersion = "2.2.0"
 
 type setOperationCapability struct {
 	Enabled bool     `json:"enabled"`

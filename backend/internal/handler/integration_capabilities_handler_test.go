@@ -200,7 +200,7 @@ func TestIntegrationCapabilitiesAcceptsEveryIndependentRollbackCombination(t *te
 						t.Fatalf("mode independence drifted for %s/%s/%s/%s: %+v", generationMode, exportMode, qualityMode, diversityModeValue, response)
 					}
 					sets := response.ProblemSets
-					if response.ReleaseVersion != "2.1.0" || !sets.Enabled || sets.MinItemCount != 1 || sets.MaxItemCount != 1000 ||
+					if response.ReleaseVersion != "2.2.0" || !sets.Enabled || sets.MinItemCount != 1 || sets.MaxItemCount != 1000 ||
 						len(sets.SupportedTypes) != 4 || !sets.Assembly.Enabled || sets.Assembly.RequiresModel || !sets.Export.ScoresIncluded ||
 						sets.Generation.Enabled != response.GenerationJobs.Enabled || sets.Export.Enabled != response.Exports.PortableSetsEnabled {
 						t.Fatalf("set capability drifted: %+v", response)

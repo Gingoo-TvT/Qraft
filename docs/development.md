@@ -20,10 +20,12 @@ python3 -m pip install PyYAML==6.0.2
 go -C backend test ./... -count=1
 go -C desktop test -race ./... -count=1
 go -C sandbox test ./... -count=1
-(cd frontend && npm run lint && npm run build && npm run build:desktop)
+(cd frontend && npm run test:search && npm run lint && npm run build && npm run build:desktop)
 python3 desktop/scripts/prepare-runtime.py --check
 python3 scripts/check-repository.py
 ```
+
+修改 Windows 专属逻辑时，还需在 Windows 上运行桌面测试与检查；Linux 上可先用 `GOOS=windows GOARCH=amd64 go -C desktop vet ./...` 检查平台代码，交叉编译不能替代原生窗口验证。
 
 前端开发运行 `cd frontend && npm run dev`；请求默认同源。若独立使用开发服务器，应显式配置 `NEXT_PUBLIC_API_URL` 指向自己的测试后端，见 `.env.example`。
 
@@ -50,6 +52,8 @@ python3 desktop/scripts/package.py --out /absolute/path/qraft-artifacts \
 发布前至少验证：空首启不请求旧服务、两种连接方式、原生 WebView2 窗口、主题和表单输入、安装与卸载、纯净数据库初始化、题集保存和导出、沙箱执行。只上传明确列出的发行产物，不上传临时数据目录或本机测试日志。
 
 GitHub CI 检查主分支及 PR。Release 附件必须与通过检查的提交一致；代码构建通过不意味着外部模型题目质量或公开部署已经验证。
+
+发行说明保存在 `docs/releases/`，当前为 [V2.2.0](releases/v2.2.0.md)。发布时同步版本声明、README 下载入口、Windows 使用指南与 GitHub Release 正文，列出升级步骤及客户端/服务端兼容要求。不要把客户端更新描述成后端更新；也不要把编译通过写成已完成安装或业务实测。
 
 ## 保持仓库整洁
 

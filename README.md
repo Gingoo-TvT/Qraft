@@ -25,6 +25,16 @@ Windows 原生窗口与 Web 共用业务界面。客户端负责交互，服务�
 
 ![Qraft 首次使用：选择自己的工作区](docs/assets/welcome.png)
 
+## V2.2.0 · 搜索更完整，使用更顺手
+
+- **统一找题**：一次搜索编程题与客观题，支持题号、标题、标签、知识点和组合筛选。
+- **更合适的界面**：搜索入口随页面显示；修复 Windows 缩放和创建页摘要、操作按钮的布局。
+- **客户端内更新**：手动检查、下载校验、安装并重启，保留连接和资料目录。
+
+[查看完整发行说明](docs/releases/v2.2.0.md) · [下载 V2.2.0](https://github.com/Gingoo-TvT/Qraft/releases/tag/v2.2.0)
+
+> 从 v2.1.0 升级时，先手动安装新版客户端。统一搜索需要 **V2.2.0 客户端与服务端配套升级**；客户端更新不会升级后端。
+
 ## 选择适合你的使用方式
 
 | | 连接已有服务 | 在本机自行部署 |
@@ -96,7 +106,7 @@ make backend-up
 
 ## 文档导航
 
-[使用客户端](docs/windows-desktop.md) · [自部署](docs/self-hosting.md) · [主题扩展](docs/desktop-themes.md) · [题集生成](docs/problem-set-generation.md) · [组卷](docs/problem-set-assembly.md) · [数据生成框架](docs/testdata-framework.md) · [API 参考](docs/api-reference.md) · [架构](docs/architecture.md) · [开发](docs/development.md)
+[V2.2.0 发行说明](docs/releases/v2.2.0.md) · [使用客户端](docs/windows-desktop.md) · [自部署](docs/self-hosting.md) · [主题扩展](docs/desktop-themes.md) · [题集生成](docs/problem-set-generation.md) · [组卷](docs/problem-set-assembly.md) · [数据生成框架](docs/testdata-framework.md) · [API 参考](docs/api-reference.md) · [架构](docs/architecture.md) · [开发](docs/development.md)
 
 ## 当前边界
 

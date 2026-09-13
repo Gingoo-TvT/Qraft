@@ -10,10 +10,10 @@ import (
 	"strings"
 )
 
-const Version = "2.1.0"
+const Version = "2.2.0"
 
 // The client pins the matching backend bundle for this full release.
-const BackendVersion = "2.1.0"
+const BackendVersion = "2.2.0"
 
 type Config struct {
 	SchemaVersion int    `json:"schema_version"`
