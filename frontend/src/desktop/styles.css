@@ -60,6 +60,11 @@ button:focus-visible,a:focus-visible { outline:2px solid var(--da); outline-offs
 .desktop-toolbar-actions { margin-left:auto; display:flex; align-items:center; gap:12px; }
 .desktop-content { flex:1; min-height:0; overflow:auto; scroll-behavior:smooth; }
 .desktop-content .forge-page { max-width:1280px; margin:0 auto; padding:30px 32px; }
+.desktop-service-notice { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 20px; margin-bottom:24px; padding:16px 20px; border:1px solid var(--dl); border-radius:10px; background:var(--dp); color:var(--dt); }
+.desktop-service-notice>div:first-child { flex:1 1 300px; min-width:0; }
+.desktop-service-notice strong { font-size:14px; font-weight:600; }
+.desktop-service-notice p { margin:5px 0 0; color:var(--dm); font-size:13px; line-height:1.7; }
+.desktop-service-notice .desktop-form-actions { margin:0; }
 .desktop-statusbar { display:flex; align-items:center; flex-shrink:0; min-height:29px; gap:18px; padding:0 19px; border-top:1px solid var(--dl); background:var(--db); font-size:12px; color:var(--dm); white-space:nowrap; }
 .desktop-statusbar button { display:flex; align-items:center; gap:7px; }
 .desktop-statusbar button:hover { color:var(--dt); }

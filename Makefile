@@ -18,7 +18,7 @@ test:
 	go -C backend test ./... -count=1
 	go -C desktop test ./... -count=1
 	go -C sandbox test ./... -count=1
-	cd frontend && npm ci && npm run lint && npm run test:search && npm run build && npm run build:desktop
+	cd frontend && npm ci && npm run lint && npm run test:search && npm run test:desktop && npm run build && npm run build:desktop
 	python3 scripts/check-repository.py
 build: setup
 	python3 scripts/configure.py --refresh-revision

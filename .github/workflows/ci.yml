@@ -91,6 +91,7 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run lint
       - run: npm run test:search
+      - run: npm run test:desktop
       - run: npm run build
       - run: npm run build:desktop
 

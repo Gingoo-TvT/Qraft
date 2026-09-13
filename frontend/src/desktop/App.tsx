@@ -11,7 +11,7 @@ import Header from '@/components/layout/Header';
 import Sidebar from '@/components/layout/Sidebar';
 import { routePage } from './routes';
 import { startupPath } from './startup-path';
-import { boot, nativeRequest, serviceURL, useDesktop, type ExportRecord } from './runtime';
+import { boot, nativeRequest, useDesktop, type ExportRecord } from './runtime';
 
 const groups = [
  { label: '工作空间', items: [{ to: '/', name: '工作台', icon: LayoutDashboard }, { to: '/problems/new', name: '创建题目', icon: Plus }, { to: '/problem-sets/new', name: '生成题集', icon: Sparkles }, { to: '/problem-sets/assemble', name: '题库组卷', icon: Layers3 }, { to: '/workflows', name: '任务中心', icon: Workflow }] },
@@ -26,7 +26,7 @@ class PageBoundary extends React.Component<{ children: React.ReactNode }, { erro
 }
 export default function App() {
  const path = usePathname();
- const { state, preferences, connection, probing, notice, setNotice, updatePreferences } = useDesktop();
+ const { state, preferences, connection, probing, notice, setNotice, updatePreferences, refreshState } = useDesktop();
  const [palette, setPalette] = useState(false);
  const [mobileOpen, setMobileOpen] = useState(false);
  const content = useRef<HTMLElement>(null);
@@ -105,8 +105,12 @@ export default function App() {
     themePicker={<ThemeQuickPicker />}
     actions={<button type="button" className="af-icon-button" title="导出记录" aria-label="查看导出记录" onClick={() => navigate('/desktop/exports')}>{exporting ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}</button>} />
    <main ref={content} id="workspace-content" className="af-content scrollbar-thin" data-workbench-content="true">
-    <PageBoundary key={serviceURL(state) + path}><Suspense fallback={<div className="desktop-empty large"><Loader2 size={26} className="animate-spin" /><strong>正在打开页面…</strong></div>}>
-     {!state.service_url && !path.startsWith('/desktop/') ? <Settings /> : path === '/' ? <Home /> : path === '/desktop/settings' ? <Settings /> : path === '/desktop/exports' ? <Exports /> : Page ? <Page /> : <div className="desktop-empty large"><HelpCircle size={30} /><strong>没有这个页面</strong><Link href="/" className="desktop-primary-button">返回工作台</Link></div>}
+    {!state.service_url && !path.startsWith('/desktop/') && <section className="desktop-service-notice" role="status" aria-label="服务连接提示">
+      <div><strong>{state.operation.busy && ['start', 'sync'].includes(state.operation.action) ? '本机后端正在启动' : '服务尚未就绪'}</strong><p>你可以继续浏览页面和填写需求；读取题库、保存配置和提交任务需要先连接服务。</p></div>
+      <div className="desktop-form-actions"><Link href={'/desktop/settings?tab=' + (state.config.mode === 'local' ? 'local' : 'connection')} className="desktop-subtle-button">{state.config.mode === 'local' ? '前往本地后端' : '连接已有服务'}</Link><button type="button" className="desktop-subtle-button" disabled={state.operation.busy} onClick={() => { void refreshState().catch(error => setNotice(error.message)); }}>刷新连接状态</button></div>
+     </section>}
+     <PageBoundary key={path}><Suspense fallback={<div className="desktop-empty large"><Loader2 size={26} className="animate-spin" /><strong>正在打开页面…</strong></div>}>
+     {path === '/' ? <Home /> : path === '/desktop/settings' ? <Settings /> : path === '/desktop/exports' ? <Exports /> : Page ? <Page /> : <div className="desktop-empty large"><HelpCircle size={30} /><strong>没有这个页面</strong><Link href="/" className="desktop-primary-button">返回工作台</Link></div>}
     </Suspense></PageBoundary>
    </main>
    <footer className="desktop-statusbar"><button onClick={() => navigate('/desktop/settings')}><i className={connection?.ready ? 'connected' : probing ? 'pending' : ''} />{state.operation.busy ? (state.operation.action.startsWith('update-') ? '客户端更新中' : '本地服务操作中') : connection?.ready ? '服务已连接' : probing ? '正在连接服务' : '服务未连接'}{connection?.release_version && <span>v{connection.release_version}</span>}</button><span className="desktop-statusbar-hint">{state.operation.busy ? state.operation.message.split('\n')[0] : (state.config.mode === 'local' && !state.service_url ? '本机后端尚未启动，请完成部署设置' : '生成任务由工作区持续运行')}</span><button ref={commandTrigger} title="快捷操作 · Ctrl Shift K" onClick={() => setPalette(true)}><Command size={12} />快捷操作</button></footer>
