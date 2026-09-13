@@ -1,6 +1,7 @@
 import { lazy, type ComponentType } from 'react';
 
 export const pages: Record<string, ComponentType> = {
+ '/search': lazy(() => import('@/app/search/page')),
  '/problems': lazy(() => import('@/app/problems/page')),
  '/problems/new': lazy(() => import('@/app/problems/new/page')),
  '/problems/quarantine': lazy(() => import('@/app/problems/quarantine/page')),

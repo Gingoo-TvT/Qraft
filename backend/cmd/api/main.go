@@ -276,6 +276,7 @@ func main() {
 	tagHandler := handler.NewTagHandler(tagRepo)
 	statsHandler := handler.NewStatsHandler(problemRepo)
 	quizHandler := handler.NewQuizHandler(quizService, quizImportService, quizExportService, kpRepo)
+	questionSearchHandler := handler.NewQuestionSearchHandler(repository.NewQuestionSearchRepository(dbPool))
 	embeddingHandler := handler.NewEmbeddingHandler(vectorRepo, embeddingHandlerRuntimeConfig)
 	embeddingHandler.SetPersistentRuntimeSettings(embeddingSettingsRepo, settingsCipher)
 
@@ -338,6 +339,7 @@ func main() {
 
 	// Quizzes.
 	v1.POST("/quizzes", quizHandler.HandleCreate)
+	v1.GET("/questions/search", questionSearchHandler.HandleSearch)
 	v1.GET("/quizzes", quizHandler.HandleList)
 	v1.POST("/quizzes/generate", quizHandler.HandleGenerate)
 	v1.POST("/quizzes/import", quizHandler.HandleImport)

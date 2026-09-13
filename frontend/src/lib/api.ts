@@ -44,6 +44,8 @@ import type {
   PublicReleaseApprovalReport,
   PublicReleaseApprovalRequest,
   QuizFilter,
+  QuestionSearchFilter,
+  QuestionSearchItem,
   ReviewSettings,
   ReviewSettingsUpdate,
   QuizGenerateParams,
@@ -928,4 +930,15 @@ export { APIError };
 
 export function quizTemplateURL(): string {
   return apiUrl("/api/v1/quizzes/template.xlsx");
+}
+
+
+export async function searchQuestions(
+  filter: QuestionSearchFilter,
+  signal?: AbortSignal,
+): Promise<APIResponse<QuestionSearchItem[]>> {
+  return request<QuestionSearchItem[]>(
+    '/api/v1/questions/search' + buildQueryString(filter as Record<string, unknown>),
+    { signal },
+  );
 }
