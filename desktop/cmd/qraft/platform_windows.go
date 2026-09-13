@@ -54,6 +54,11 @@ func openExternal(url string) error {
 func runWindow(manager *app.Manager, dir string) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	restoreDPI, err := enablePerMonitorDPI()
+	if err != nil {
+		return err
+	}
+	defer restoreDPI()
 	if runtimeVersion() == "" {
 		if !*smoke && messageBox(0, "需要 Microsoft Edge WebView2 Runtime 才能显示桌面界面。现在打开微软官方下载页？安装后重新启动 Qraft。", 0x24) == 6 {
 			_ = openExternal("https://developer.microsoft.com/microsoft-edge/webview2/")
@@ -69,25 +74,23 @@ func runWindow(manager *app.Manager, dir string) error {
 		return e
 	}
 	defer windows.CloseHandle(mutex)
-	width, height := uint(1280), uint(860)
-	screenW, _, _ := user32.NewProc("GetSystemMetrics").Call(0)
-	screenH, _, _ := user32.NewProc("GetSystemMetrics").Call(1)
-	if screenW > 100 && screenW < 1360 {
-		width = uint(screenW) - 80
-	}
-	if screenH > 100 && screenH < 960 {
-		height = uint(screenH) - 100
-	}
-	w := webview.NewWithOptions(webview.WebViewOptions{DataPath: filepath.Join(dir, "browser", "workbench"), AutoFocus: true, WindowOptions: webview.WindowOptions{Title: "Qraft · v" + app.Version, Width: width, Height: height, Center: true}})
+	workArea := primaryWorkArea()
+	width, height := initialWindowSize(systemDPI(), int(workArea.right-workArea.left), int(workArea.bottom-workArea.top))
+	w := webview.NewWithOptions(webview.WebViewOptions{DataPath: filepath.Join(dir, "browser", "workbench"), AutoFocus: true, WindowOptions: webview.WindowOptions{Title: "Qraft · v" + app.Version, Width: uint(width), Height: uint(height), Center: true}})
 	if w == nil {
 		return fmt.Errorf("无法创建桌面窗口，请检查 WebView2 Runtime")
 	}
 	defer w.Destroy()
-	w.SetSize(min(850, int(width)), min(620, int(height)), webview.HintMin)
 	hwnd := uintptr(w.Window())
+	setMinimum := func(width, height int) { w.SetSize(width, height, webview.HintMin) }
+	positionInitialWindow(hwnd, setMinimum)
 	old, _, _ := user32.NewProc("SetWindowLongPtrW").Call(hwnd, ^uintptr(3), syscall.NewCallback(func(h uintptr, msg uint32, wp, lp uintptr) uintptr {
+		if msg == wmDPIChanged && lp != 0 {
+			resizeForDPI(h, int(wp&0xffff), suggestedDPIRect(lp), setMinimum)
+			return 0
+		}
 		if msg == 0x10 && manager.Busy() {
-			messageBox(h, "本地服务操作尚未完成，请等待结果后再关闭客户端。", 0x40)
+			messageBox(h, "当前操作尚未完成，请等待结果后再关闭。更新检查或下载可在关于页取消。", 0x40)
 			return 0
 		}
 		r, _, _ := user32.NewProc("CallWindowProcW").Call(windowProc, h, uintptr(msg), wp, lp)
@@ -118,13 +121,20 @@ func runWindow(manager *app.Manager, dir string) error {
 		ChooseSave: func(name string) (string, error) {
 			return onUI(func() (string, error) { return chooseSave(hwnd, name) })
 		},
-		OpenExternal: openExternal,
+		OpenExternal:      openExternal,
+		RequestUpdateExit: func() { w.Dispatch(w.Terminate) },
 		Ready: func(report map[string]any) {
 			if !*smoke {
 				return
 			}
 			ready.Do(func() {
 				report["native_window"] = true
+				report["process_dpi_awareness"] = processDPIAwareness()
+				clientRect := windowClientRect(hwnd)
+				report["client_width"] = clientRect.right - clientRect.left
+				report["client_height"] = clientRect.bottom - clientRect.top
+				report["window_dpi"] = windowDPI(hwnd)
+				report["per_monitor_v2"] = windowUsesPerMonitorV2(hwnd)
 				report["webview2"] = runtimeVersion()
 				report["version"] = app.Version
 				report["bundled_assets"] = true

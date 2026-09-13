@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,13 +22,14 @@ type Operation struct {
 	Updated string `json:"updated"`
 }
 type State struct {
-	Configured bool      `json:"configured"`
-	ServiceURL string    `json:"service_url"`
-	Version    string    `json:"version"`
-	DataDir    string    `json:"data_dir"`
-	Config     Config    `json:"config"`
-	Packaged   bool      `json:"packaged"`
-	Operation  Operation `json:"operation"`
+	Configured bool         `json:"configured"`
+	ServiceURL string       `json:"service_url"`
+	Version    string       `json:"version"`
+	DataDir    string       `json:"data_dir"`
+	Config     Config       `json:"config"`
+	Packaged   bool         `json:"packaged"`
+	Operation  Operation    `json:"operation"`
+	Update     ClientUpdate `json:"update"`
 }
 type Manager struct {
 	dir           string
@@ -37,11 +39,19 @@ type Manager struct {
 	endpointMu    sync.Mutex
 	endpoint      string
 	endpointUntil time.Time
+	update        ClientUpdate
+	updateRelease *clientRelease
+	updatePayload string
+	updateHTTP    *http.Client
+	updateCancel  context.CancelFunc
 	op            Operation
 }
 
 func NewManager(dir string, runner Runner, manifest RuntimeManifest) *Manager {
-	return &Manager{dir: dir, runner: runner, manifest: manifest}
+	m := &Manager{dir: dir, runner: runner, manifest: manifest}
+	m.update = ClientUpdate{Status: "idle", CurrentVersion: Version}
+	m.loadUpdateResult()
+	return m
 }
 func (m *Manager) runtimeDir() string { return filepath.Join(m.dir, "backend") }
 func (m *Manager) Snapshot() (State, error) {
@@ -53,7 +63,7 @@ func (m *Manager) Snapshot() (State, error) {
 	endpoint, _ := m.ServerURL()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return State{Configured: configured, ServiceURL: endpoint, Version: Version, DataDir: m.dir, Config: c, Packaged: m.manifest.Validate() == nil, Operation: m.op}, nil
+	return State{Configured: configured, ServiceURL: endpoint, Version: Version, DataDir: m.dir, Config: c, Packaged: m.manifest.Validate() == nil, Operation: m.op, Update: m.update}, nil
 }
 func (m *Manager) Busy() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.op.Busy }
 func (m *Manager) Save(c Config) error {

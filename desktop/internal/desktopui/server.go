@@ -18,13 +18,14 @@ import (
 )
 
 type Options struct {
-	Manager      *app.Manager
-	Assets       fs.FS
-	Native       bool
-	ChooseBundle func() (string, error)
-	ChooseSave   func(string) (string, error)
-	OpenExternal func(string) error
-	Ready        func(map[string]any)
+	Manager           *app.Manager
+	Assets            fs.FS
+	Native            bool
+	ChooseBundle      func() (string, error)
+	ChooseSave        func(string) (string, error)
+	OpenExternal      func(string) error
+	RequestUpdateExit func()
+	Ready             func(map[string]any)
 }
 type Server struct {
 	options     Options
@@ -199,6 +200,19 @@ func (s *Server) native(w http.ResponseWriter, r *http.Request, path string) {
 		var p app.Preferences
 		if err = decode(r, &p); err == nil {
 			err = s.options.Manager.SavePreferences(p)
+		}
+	case "client-update":
+		var p struct {
+			Action string `json:"action"`
+		}
+		if err = decode(r, &p); err == nil {
+			s.mu.Lock()
+			if s.downloading {
+				err = fmt.Errorf("请等待文件导出完成后再更新")
+			} else {
+				err = s.options.Manager.BeginClientUpdate(p.Action, s.options.RequestUpdateExit)
+			}
+			s.mu.Unlock()
 		}
 	case "operation":
 		var p struct {

@@ -83,9 +83,9 @@ func (s *Server) save(name string, source func() (io.ReadCloser, int64, error)) 
 		return Download{}, fmt.Errorf("请在 Windows 软件中使用原生另存为")
 	}
 	s.mu.Lock()
-	if s.downloading {
+	if s.downloading || s.options.Manager.Busy() {
 		s.mu.Unlock()
-		return Download{}, fmt.Errorf("已有文件正在导出，请等待完成")
+		return Download{}, fmt.Errorf("已有文件、服务或更新操作正在进行，请等待完成")
 	}
 	s.downloading = true
 	s.mu.Unlock()

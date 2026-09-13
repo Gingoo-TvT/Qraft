@@ -46,7 +46,7 @@ export default function App() {
  useEffect(() => { setMobileOpen(false); content.current?.scrollTo({ top: 0, left: 0, behavior: 'instant' }); }, [path]);
  useEffect(() => {
   // Effects run after DOM commit; hidden-window smoke tests cannot rely on rAF.
-  void nativeRequest('ready', { bundled_workbench: document.querySelector('[data-bundled-workbench]') !== null, navigation_items: document.querySelectorAll('[data-desktop-nav]').length, route: window.location.pathname }).catch(() => {});
+  void nativeRequest('ready', { bundled_workbench: document.querySelector('[data-bundled-workbench]') !== null, navigation_items: document.querySelectorAll('[data-desktop-nav]').length, route: window.location.pathname, viewport_width: window.innerWidth, viewport_height: window.innerHeight, device_pixel_ratio: window.devicePixelRatio }).catch(() => {});
  }, []);
  useEffect(() => {
   const handler = (event: KeyboardEvent) => {
@@ -109,7 +109,7 @@ export default function App() {
      {!state.service_url && !path.startsWith('/desktop/') ? <Settings /> : path === '/' ? <Home /> : path === '/desktop/settings' ? <Settings /> : path === '/desktop/exports' ? <Exports /> : Page ? <Page /> : <div className="desktop-empty large"><HelpCircle size={30} /><strong>没有这个页面</strong><Link href="/" className="desktop-primary-button">返回工作台</Link></div>}
     </Suspense></PageBoundary>
    </main>
-   <footer className="desktop-statusbar"><button onClick={() => navigate('/desktop/settings')}><i className={connection?.ready ? 'connected' : probing ? 'pending' : ''} />{state.operation.busy ? '本地服务操作中' : connection?.ready ? '服务已连接' : probing ? '正在连接服务' : '服务未连接'}{connection?.release_version && <span>v{connection.release_version}</span>}</button><span className="desktop-statusbar-hint">{state.operation.busy ? state.operation.message.split('\n')[0] : (state.config.mode === 'local' && !state.service_url ? '本机后端尚未启动，请完成部署设置' : '生成任务由工作区持续运行')}</span><button ref={commandTrigger} title="快捷操作 · Ctrl Shift K" onClick={() => setPalette(true)}><Command size={12} />快捷操作</button></footer>
+   <footer className="desktop-statusbar"><button onClick={() => navigate('/desktop/settings')}><i className={connection?.ready ? 'connected' : probing ? 'pending' : ''} />{state.operation.busy ? (state.operation.action.startsWith('update-') ? '客户端更新中' : '本地服务操作中') : connection?.ready ? '服务已连接' : probing ? '正在连接服务' : '服务未连接'}{connection?.release_version && <span>v{connection.release_version}</span>}</button><span className="desktop-statusbar-hint">{state.operation.busy ? state.operation.message.split('\n')[0] : (state.config.mode === 'local' && !state.service_url ? '本机后端尚未启动，请完成部署设置' : '生成任务由工作区持续运行')}</span><button ref={commandTrigger} title="快捷操作 · Ctrl Shift K" onClick={() => setPalette(true)}><Command size={12} />快捷操作</button></footer>
   </div>
   {notice && <div role="status" className="desktop-notice"><Check size={17} /><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice('')}><X size={16} /></button></div>}
   {palette && <div className="desktop-palette-overlay" onMouseDown={event => { if (event.target === event.currentTarget) setPalette(false); }}><section role="dialog" aria-modal="true" aria-label="快捷操作" className="desktop-palette" onKeyDown={event => {
