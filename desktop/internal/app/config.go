@@ -10,9 +10,9 @@ import (
 	"strings"
 )
 
-const Version = "2.2.0"
+const Version = "2.2.1"
 
-// The client pins the matching backend bundle for this full release.
+// Client-only patches can keep the previously published, verified backend bundle.
 const BackendVersion = "2.2.0"
 
 type Config struct {

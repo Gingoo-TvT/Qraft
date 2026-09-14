@@ -25,15 +25,15 @@ Windows 原生窗口与 Web 共用业务界面。客户端负责交互，服务�
 
 ![Qraft 首次使用：选择自己的工作区](docs/assets/welcome.png)
 
-## V2.2.0 · 搜索更完整，使用更顺手
+## V2.2.1 · 服务连接恢复，创作不中断
 
-- **统一找题**：一次搜索编程题与客观题，支持题号、标题、标签、知识点和组合筛选。
-- **更合适的界面**：搜索入口随页面显示；修复 Windows 缩放和创建页摘要、操作按钮的布局。
-- **客户端内更新**：手动检查、下载校验、安装并重启，保留连接和资料目录。
+- **页面正常打开**：本机后端尚未启动或正在启动时，点击创作、题库等入口不再误显示客户端设置。
+- **需求继续保留**：停留在当前页面时，连接状态恢复不会清空已填写的需求；标签加载失败可原地重试。
+- **只需更新客户端**：继续使用 V2.2.0 后端，已有部署无需重新导入镜像包或重建题库。
 
-[查看完整发行说明](docs/releases/v2.2.0.md) · [下载 V2.2.0](https://github.com/Gingoo-TvT/Qraft/releases/tag/v2.2.0)
+[查看完整发行说明](docs/releases/v2.2.1.md) · [下载 V2.2.1](https://github.com/Gingoo-TvT/Qraft/releases/tag/v2.2.1)
 
-> 从 v2.1.0 升级时，先手动安装新版客户端。统一搜索需要 **V2.2.0 客户端与服务端配套升级**；客户端更新不会升级后端。
+> v2.2.0 可通过客户端内置更新升级；v2.1.0 首次仍需手动安装新版。V2.2.1 配套后端仍为 **V2.2.0**，统一搜索需要该后端接口；客户端更新不会升级后端。
 
 ## 选择适合你的使用方式
 
@@ -63,7 +63,7 @@ Windows 原生窗口与 Web 共用业务界面。客户端负责交互，服务�
 ## 三步开始
 
 1. **下载** [最新 Release](https://github.com/Gingoo-TvT/Qraft/releases/latest) 中的 Windows 安装包或便携 ZIP。便携版解压后运行 `Qraft.exe`。
-2. **选择使用方式**：连接已有服务时填写根地址；自行部署时按界面导入同版本后端包并启动。
+2. **选择使用方式**：连接已有服务时填写根地址；自行部署时按界面导入 Release 配套的后端包并启动（V2.2.1 使用 V2.2.0 后端包）。
 3. **配置并创作**：独立部署者先设置模型和去重服务，之后在工作台写下出题需求。
 
 连接已有服务时不需要下载后端镜像包。模型通过你配置的 API 调用，不要求本地 GPU。完整步骤、WebView2 安装、数据位置与升级方式见 [Windows 使用指南](docs/windows-desktop.md)。
@@ -106,7 +106,7 @@ make backend-up
 
 ## 文档导航
 
-[V2.2.0 发行说明](docs/releases/v2.2.0.md) · [使用客户端](docs/windows-desktop.md) · [自部署](docs/self-hosting.md) · [主题扩展](docs/desktop-themes.md) · [题集生成](docs/problem-set-generation.md) · [组卷](docs/problem-set-assembly.md) · [数据生成框架](docs/testdata-framework.md) · [API 参考](docs/api-reference.md) · [架构](docs/architecture.md) · [开发](docs/development.md)
+[V2.2.1 发行说明](docs/releases/v2.2.1.md) · [使用客户端](docs/windows-desktop.md) · [自部署](docs/self-hosting.md) · [主题扩展](docs/desktop-themes.md) · [题集生成](docs/problem-set-generation.md) · [组卷](docs/problem-set-assembly.md) · [数据生成框架](docs/testdata-framework.md) · [API 参考](docs/api-reference.md) · [架构](docs/architecture.md) · [开发](docs/development.md)
 
 ## 当前边界
 

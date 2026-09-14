@@ -47,9 +47,12 @@ for name in ["frontend/package.json", "frontend/package-lock.json"]:
     if name.endswith("package-lock.json") and data["packages"][""]["version"] != version:
         errors.append("Lock root version mismatch")
 config = (ROOT / "desktop/internal/app/config.go").read_text()
-for key in ["Version", "BackendVersion"]:
-    if not re.search(r'const ' + key + r' = "' + re.escape(version) + '"', config):
-        errors.append("Desktop version mismatch: " + key)
+if not re.search(r'const Version = "' + re.escape(version) + '"', config):
+    errors.append("Desktop version mismatch: Version")
+# A client patch may reuse an older published backend. Runtime generation and
+# packaging separately check its Compose tags, bundle digest and image identity.
+if not re.search(r'const BackendVersion = "[0-9]+\.[0-9]+\.[0-9]+"', config):
+    errors.append("Desktop backend version must pin a numeric release")
 if errors:
     print("\n".join(sorted(set(errors))), file=sys.stderr)
     sys.exit(1)

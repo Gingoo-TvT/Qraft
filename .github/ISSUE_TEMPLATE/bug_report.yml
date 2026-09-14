@@ -5,7 +5,7 @@ body:
     id: version
     attributes:
       label: 版本与环境
-      placeholder: Qraft 2.2.0 / Windows 11 / 连接已有服务
+      placeholder: Qraft 2.2.1 / Windows 11 / 连接已有服务
     validations:
       required: true
   - type: textarea
