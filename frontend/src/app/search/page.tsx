@@ -63,7 +63,8 @@ function SearchFilters({ filter, onApply }: {
         <input name="max_difficulty" type="number" min={800} max={3500} required className="forge-input w-36"
           defaultValue={filter.max_difficulty ?? 3500} />
       </label>
-      <p className="pb-2 text-xs text-anvil-500">按编程题库原有评分筛选（800–3500）。</p>
+      <label className="space-y-2 text-sm"><span className="block">评分依据</span><select name="rating_basis" className="forge-input" defaultValue={filter.rating_basis ?? 'official'}><option value="official">正式评级</option><option value="target">目标难度</option></select></label>
+      <p className="pb-2 text-xs text-anvil-500">正式评级仅包含管理员已确认且仍有效的题目。目标难度是出题时的设定值。</p>
     </div>}
     {difficultyMode && difficultyMode !== 'numeric' &&
       <p className="text-xs text-anvil-500">按客观题库原有难度筛选；编程题评分与客观题难度分别保留。</p>}
@@ -94,6 +95,7 @@ function SearchContent() {
     const controller = new AbortController();
     setPending(true);
     searchQuestions(filter, controller.signal).then(response => {
+      if (filter.rating_basis === 'official' && response.rating_basis !== 'official') throw new Error('当前服务尚不支持正式评级筛选，请先升级服务端。');
       if (!controller.signal.aborted) setResult({ query, items: response.data ?? [], total: response.meta?.total ?? 0 });
     }).catch(error => {
       if (controller.signal.aborted) return;
@@ -127,7 +129,7 @@ function SearchContent() {
               {current.items.map(item => <li key={item.source + ':' + item.id} className="p-5">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-anvil-500">
                   <span className="forge-badge">{QUIZ_TYPE_LABELS[item.type]}</span><span>题号 {item.code || item.id}</span>
-                  <span>{item.difficulty !== undefined ? item.difficulty + ' · ' + getDifficultyLabel(item.difficulty) :
+                  <span>{item.difficulty !== undefined ? (item.rating_basis === 'official' ? '正式评级 ' : '目标难度 ') + item.difficulty + ' · ' + getDifficultyLabel(item.difficulty) :
                     item.quiz_difficulty ? QUIZ_DIFFICULTY_LABELS[item.quiz_difficulty] : '未设置难度'}</span>
                 </div>
                 <Link className="my-2 flex w-fit max-w-full items-start gap-2 text-base font-semibold text-anvil-900 hover:text-forge-600 dark:text-anvil-100"

@@ -184,6 +184,9 @@ func (s *ProblemSetService) Create(ctx context.Context, req ProblemSetCreateRequ
 	if err := set.NormalizeProblemSet(); err != nil {
 		return nil, fmt.Errorf("validation: %w", err)
 	}
+	if set.GenerationConfig != nil && set.GenerationConfig.Assembly != nil {
+		set.GenerationConfig.Assembly.RatingSnapshots = nil
+	}
 	if err := set.GenerationConfig.Validate(set.DesiredItemCount); err != nil {
 		return nil, fmt.Errorf("validation: %w", err)
 	}
@@ -238,8 +241,25 @@ func (s *ProblemSetService) Update(ctx context.Context, id uuid.UUID, req Proble
 	if set.Generation.Active() {
 		return nil, fmt.Errorf("%w: %s", ErrConflict, repository.ErrProblemSetGenerationActive)
 	}
+	var savedAssembly *domain.ProblemSetAssemblyFilter
+	if set.GenerationConfig != nil && set.GenerationConfig.Assembly != nil {
+		copy := *set.GenerationConfig.Assembly
+		copy.RatingSnapshots = append([]domain.ProblemSetAssemblyRatingSnapshot(nil), copy.RatingSnapshots...)
+		savedAssembly = &copy
+	}
 	if req.GenerationConfig != nil {
 		set.GenerationConfig = req.GenerationConfig
+	}
+	if set.GenerationConfig != nil {
+		if set.GenerationConfig.Assembly != nil {
+			set.GenerationConfig.Assembly.RatingSnapshots = nil
+		}
+		if savedAssembly != nil && len(savedAssembly.RatingSnapshots) > 0 {
+			if set.GenerationConfig.Assembly == nil {
+				set.GenerationConfig.Assembly = savedAssembly
+			}
+			set.GenerationConfig.Assembly.RatingSnapshots = savedAssembly.RatingSnapshots
+		}
 	}
 	if req.Code != nil {
 		set.Code = *req.Code

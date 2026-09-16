@@ -32,6 +32,7 @@ type ProblemSetAssembleRequest struct {
 }
 
 func normalizeAssemblyRequest(req *ProblemSetAssemblyRequest) (int, []domain.QuizType, error) {
+	req.Filter.RatingSnapshots = nil // Ignore client-supplied history on a new assembly.
 	total := 0
 	types := []domain.QuizType{}
 	for _, q := range req.Config.Distribution {
@@ -199,6 +200,12 @@ func (s *ProblemSetService) Assemble(ctx context.Context, req ProblemSetAssemble
 		c, exists := byID[key]
 		if !exists || ref.UpdatedAt.IsZero() || !ref.UpdatedAt.Equal(c.UpdatedAt) {
 			return nil, fmt.Errorf("%w: %s", ErrConflict, repository.ErrProblemSetAssemblyChanged)
+		}
+		if ref.Type == domain.QuizTypeProgramming && req.Filter.RatingBasis == "official" {
+			if ref.RatingDecisionID == nil || c.RatingDecisionID == nil || *ref.RatingDecisionID != *c.RatingDecisionID || ref.RatingSubjectHash != c.RatingSubjectHash {
+				return nil, fmt.Errorf("%w: 正式评级已变，请重新预览", ErrConflict)
+			}
+			req.Config.Assembly.RatingSnapshots = append(req.Config.Assembly.RatingSnapshots, domain.ProblemSetAssemblyRatingSnapshot{ProblemID: ref.ID, Rating: c.Difficulty, SubjectHash: c.RatingSubjectHash, DecisionID: *c.RatingDecisionID})
 		}
 		fp := string(ref.Type) + ":" + c.Fingerprint
 		if c.Fingerprint == "" {

@@ -10,7 +10,7 @@ import { hasQuestionSearch, questionSearchHref } from '@/lib/question-search-rou
 
 export type ThemePreference = WebAppearance['mode'];
 const LABELS: Record<string,string> = {
- problems:'编程题库', quizzes:'客观题库', 'problem-sets':'题集管理', workflows:'任务中心',
+ rating:'题目评估', review:'受邀评价', problems:'编程题库', quizzes:'客观题库', 'problem-sets':'题集管理', workflows:'任务中心',
  settings:'模型配置', embedding:'去重服务', 'knowledge-points':'知识点',
  desktop:'客户端', exports:'导出记录', search:'搜索题目',
  'testdata-config':'测试数据', quarantine:'隔离区', assemble:'题库组卷', new:'新建', edit:'编辑', import:'导入', hydro:'Hydro', gplt:'天梯赛专项',

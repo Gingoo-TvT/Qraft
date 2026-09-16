@@ -7,6 +7,7 @@
 // ---------------------------------------------------------------------------
 
 export interface APIResponse<T> {
+  rating_basis?: 'target' | 'official';
   success: boolean;
   data?: T;
   error?: { code: string; message: string };
@@ -997,6 +998,8 @@ export interface ProblemSetGenerationConfig {
 }
 
 export interface ProblemSetAssemblyFilter {
+  rating_snapshots?: { problem_id: string; rating: number; subject_hash: string; decision_id: string }[];
+  rating_basis?: 'target' | 'official';
   tags: string[];
   keyword: string;
   min_difficulty: number;
@@ -1007,12 +1010,15 @@ export interface ProblemSetAssemblyFilter {
 }
 
 export interface ProblemSetAssemblyRef {
+  rating_subject_hash?: string;
+  rating_decision_id?: string;
   id: string;
   type: QuizType;
   updated_at: string;
 }
 
 export interface ProblemSetAssemblyCandidate extends ProblemSetAssemblyRef {
+  rating_basis?: 'target' | 'official';
   code: string;
   title: string;
   difficulty?: number;
@@ -1178,6 +1184,7 @@ export interface ProblemSetListFilter {
 
 // Unified search preserves the source library and its difficulty scale.
 export interface QuestionSearchFilter {
+  rating_basis?: 'target' | 'official';
   q?: string;
   type?: QuizType;
   tag?: string;
@@ -1189,6 +1196,7 @@ export interface QuestionSearchFilter {
   size?: number;
 }
 export interface QuestionSearchItem {
+  rating_basis?: 'target' | 'official';
   id: string;
   source: 'problem' | 'quiz';
   type: QuizType;

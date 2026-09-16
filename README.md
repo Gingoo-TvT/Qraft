@@ -25,6 +25,10 @@ Windows 原生窗口与 Web 共用业务界面。客户端负责交互，服务�
 
 ![Qraft 首次使用：选择自己的工作区](docs/assets/welcome.png)
 
+## 开发中 · 题目评估
+
+独立盲解、KC 多路径分析、沙箱证据与人工反馈汇总，帮助解释题目难度及潜在捷径。正式评级由管理员确认，可以用于搜索和组卷；新实例不预置真值锚点或用户数据。此功能尚未进入下面的稳定发行包，详见[题目评估指南](docs/problem-rating.md)。
+
 ## V2.2.1 · 服务连接恢复，创作不中断
 
 - **页面正常打开**：本机后端尚未启动或正在启动时，点击创作、题库等入口不再误显示客户端设置。
@@ -106,7 +110,7 @@ make backend-up
 
 ## 文档导航
 
-[V2.2.1 发行说明](docs/releases/v2.2.1.md) · [使用客户端](docs/windows-desktop.md) · [自部署](docs/self-hosting.md) · [主题扩展](docs/desktop-themes.md) · [题集生成](docs/problem-set-generation.md) · [组卷](docs/problem-set-assembly.md) · [数据生成框架](docs/testdata-framework.md) · [API 参考](docs/api-reference.md) · [架构](docs/architecture.md) · [开发](docs/development.md)
+[V2.2.1 发行说明](docs/releases/v2.2.1.md) · [使用客户端](docs/windows-desktop.md) · [自部署](docs/self-hosting.md) · [主题扩展](docs/desktop-themes.md) · [题集生成](docs/problem-set-generation.md) · [组卷](docs/problem-set-assembly.md) · [数据生成框架](docs/testdata-framework.md) · [题目评估](docs/problem-rating.md) · [API 参考](docs/api-reference.md) · [架构](docs/architecture.md) · [开发](docs/development.md)
 
 ## 当前边界
 

@@ -254,6 +254,17 @@ func main() {
 	problemHandler.SetPermanentProviderSettings(llmSettingsHandler, true)
 	problemHandler.SetQG15ExportEnabled(qg15ExportMode.HydroS3BindingEnabled)
 	workflowHandler := handler.NewWorkflowHandler(temporalClient, cfg.Temporal.Namespace)
+	ratingRepo := repository.NewRatingRepository(dbPool)
+	ratingRepo.SetArtifactReader(func(ctx context.Context, key string) ([]byte, error) {
+		return minioClient.DownloadFileLimited(ctx, key, 1<<20)
+	})
+	ratingRepo.SetArtifactDigester(minio.NewContentDigester(minioClient))
+	problemSetRepo.SetRatingRepository(ratingRepo)
+	ratingRuntime := service.NewRatingRuntimeService(temporalClient, ratingRepo, cfg.Temporal.TaskQueue, service.NewProblemSetProviderResolver(llmSettingsHandler, runtimeKeyStore))
+	ratingHandler := handler.NewRatingHandler(ratingRepo, handler.RatingHandlerOptions{
+		DevMode:         cfg.App.DevMode,
+		StartAssessment: ratingRuntime.Start, CancelAssessment: ratingRuntime.Cancel, ReconcileAssessment: ratingRuntime.Reconcile,
+	})
 	generationJobHandler, err := handler.NewGenerationJobHandlerWithQualityMode(
 		problemService, temporalClient, problemHandler, qualityMode,
 	)
@@ -276,7 +287,9 @@ func main() {
 	tagHandler := handler.NewTagHandler(tagRepo)
 	statsHandler := handler.NewStatsHandler(problemRepo)
 	quizHandler := handler.NewQuizHandler(quizService, quizImportService, quizExportService, kpRepo)
-	questionSearchHandler := handler.NewQuestionSearchHandler(repository.NewQuestionSearchRepository(dbPool))
+	questionSearchRepo := repository.NewQuestionSearchRepository(dbPool)
+	questionSearchRepo.SetRatingRepository(ratingRepo)
+	questionSearchHandler := handler.NewQuestionSearchHandler(questionSearchRepo)
 	embeddingHandler := handler.NewEmbeddingHandler(vectorRepo, embeddingHandlerRuntimeConfig)
 	embeddingHandler.SetPersistentRuntimeSettings(embeddingSettingsRepo, settingsCipher)
 
@@ -304,6 +317,7 @@ func main() {
 	// -----------------------------------------------------------------------
 
 	v1 := e.Group("/api/v1")
+	ratingHandler.Register(v1)
 	v1.GET("/integration/capabilities", integrationCapabilitiesHandler.HandleGet)
 
 	// Problems.

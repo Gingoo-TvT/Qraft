@@ -55,6 +55,7 @@ import {
   statusBadgeColor,
 } from '@/lib/utils';
 import { getDifficultyLabel, STATUS_LABELS } from '@/lib/constants';
+import ProblemRating from '@/components/rating/ProblemRating';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 
 // ---------------------------------------------------------------------------
@@ -729,6 +730,7 @@ export default function ProblemDetailPage() {
             <Download className="h-4 w-4" />
             测试数据
           </a>
+          <Link href={"/rating?problem=" + encodeURIComponent(problem.id)} className="forge-btn-secondary">题目评估</Link>
           <Link
             href={`/problems/${problem.id}/edit`}
             className="forge-btn-secondary"
@@ -772,6 +774,8 @@ export default function ProblemDetailPage() {
         </div>
       </div>
 
+
+      <ProblemRating problemID={problem.id} target={problem.difficulty} />
 
       <div className="af-quality-strip">
         <ShieldCheck size={18} /><span>{gate.label}</span>

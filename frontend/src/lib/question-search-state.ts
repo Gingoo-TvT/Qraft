@@ -12,6 +12,8 @@ export function parseQuestionSearch(params: URLSearchParams): QuestionSearchFilt
   const quizDifficulty = difficulty === 'easy' || difficulty === 'medium' || difficulty === 'hard'
     ? difficulty : undefined;
   return {
+    rating_basis: params.get('rating_basis') === 'target' ? 'target' : params.get('rating_basis') === 'official' ||
+      (!quizDifficulty && (integer(params.get('min_difficulty'), 800, 3500) !== undefined || integer(params.get('max_difficulty'), 800, 3500) !== undefined)) ? 'official' : undefined,
     q: params.get('q')?.trim() || undefined,
     type: type === 'programming' || type === 'choice' || type === 'fill_blank' || type === 'judge' ? type : undefined,
     tag: params.get('tag')?.trim() || undefined,

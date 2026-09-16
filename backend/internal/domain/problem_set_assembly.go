@@ -11,18 +11,26 @@ import (
 // Assembly filters share the existing set configuration; selecting existing
 // questions needs no additional workflow or persistence lifecycle.
 type ProblemSetAssemblyFilter struct {
-	Tags              []string       `json:"tags"`
-	Keyword           string         `json:"keyword"`
-	MinDifficulty     int            `json:"min_difficulty"`
-	MaxDifficulty     int            `json:"max_difficulty"`
-	QuizDifficulty    QuizDifficulty `json:"quiz_difficulty"`
-	ExcludeRecentSets int            `json:"exclude_recent_sets"`
-	Seed              string         `json:"seed"`
+	RatingBasis       string                             `json:"rating_basis,omitempty"`
+	RatingSnapshots   []ProblemSetAssemblyRatingSnapshot `json:"rating_snapshots,omitempty"`
+	Tags              []string                           `json:"tags"`
+	Keyword           string                             `json:"keyword"`
+	MinDifficulty     int                                `json:"min_difficulty"`
+	MaxDifficulty     int                                `json:"max_difficulty"`
+	QuizDifficulty    QuizDifficulty                     `json:"quiz_difficulty"`
+	ExcludeRecentSets int                                `json:"exclude_recent_sets"`
+	Seed              string                             `json:"seed"`
 }
 
 func (f *ProblemSetAssemblyFilter) Validate() error {
 	if f == nil {
 		return nil
+	}
+	if f.RatingBasis == "" {
+		f.RatingBasis = "target"
+	}
+	if f.RatingBasis != "target" && f.RatingBasis != "official" {
+		return fmt.Errorf("评分依据须为目标难度或正式评级")
 	}
 	if f.MinDifficulty == 0 {
 		f.MinDifficulty = 800
@@ -60,14 +68,23 @@ func (f *ProblemSetAssemblyFilter) Validate() error {
 	return nil
 }
 
+type ProblemSetAssemblyRatingSnapshot struct {
+	ProblemID   uuid.UUID `json:"problem_id"`
+	Rating      int       `json:"rating"`
+	SubjectHash string    `json:"subject_hash"`
+	DecisionID  uuid.UUID `json:"decision_id"`
+}
 type ProblemSetAssemblyRef struct {
-	ID        uuid.UUID `json:"id"`
-	Type      QuizType  `json:"type"`
-	UpdatedAt time.Time `json:"updated_at"`
+	RatingSubjectHash string     `json:"rating_subject_hash,omitempty"`
+	RatingDecisionID  *uuid.UUID `json:"rating_decision_id,omitempty"`
+	ID                uuid.UUID  `json:"id"`
+	Type              QuizType   `json:"type"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 // A preview transfers metadata, never full solutions or test data.
 type ProblemSetAssemblyCandidate struct {
+	RatingBasis string `json:"rating_basis,omitempty"`
 	ProblemSetAssemblyRef
 	Code           string         `json:"code"`
 	Title          string         `json:"title"`

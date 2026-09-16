@@ -27,6 +27,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   setCollapsed(value);
   try { localStorage.setItem('algoforge_sidebar_collapsed', String(value)); } catch { /* Session preference only. */ }
  }
+ if (pathname === '/rating/review') return <div className="af-standalone">{children}</div>;
  if (pathname === '/annotate' || pathname.startsWith('/annotate/')) return <div className="af-standalone">{children}</div>;
  return <>
   <div className={'af-shell' + (collapsed ? ' is-collapsed' : '') + (mobileOpen ? ' is-mobile-open' : '')}>

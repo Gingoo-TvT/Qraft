@@ -49,6 +49,7 @@ func CORS(cfg CORSConfig) echo.MiddlewareFunc {
 			echo.HeaderAuthorization,
 			echo.HeaderXRequestID,
 			"X-Requested-With",
+			"X-Qraft-Review-Token",
 		},
 		ExposeHeaders: []string{
 			echo.HeaderContentLength,

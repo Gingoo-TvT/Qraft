@@ -74,7 +74,7 @@ func (h *WorkflowHandler) HandleList(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// Build a visibility query to find AlgoForge workflows.
-	query := `(WorkflowType = "ProblemGenerationWorkflow" OR WorkflowType = "ProblemValidationWorkflow" OR WorkflowType = "GPLTBatchGenerationWorkflow" OR WorkflowType = "QuizGenerationWorkflow")`
+	query := `(WorkflowType = "ProblemGenerationWorkflow" OR WorkflowType = "ProblemValidationWorkflow" OR WorkflowType = "GPLTBatchGenerationWorkflow" OR WorkflowType = "QuizGenerationWorkflow" OR WorkflowType = "RatingWorkflow")`
 	if status := c.QueryParam("status"); status != "" {
 		query += fmt.Sprintf(` AND ExecutionStatus = "%s"`, mapStatusFilter(status))
 	}
@@ -148,7 +148,7 @@ func (h *WorkflowHandler) HandleGet(c echo.Context) error {
 
 	if info.Status == enums.WORKFLOW_EXECUTION_STATUS_RUNNING &&
 		(info.GetType().GetName() == problemGenerationWorkflowType ||
-			info.GetType().GetName() == problemValidationWorkflowType) {
+			info.GetType().GetName() == problemValidationWorkflowType || info.GetType().GetName() == "RatingWorkflow") {
 		queryState, err := h.queryWorkflowState(ctx, workflowID, info.Execution.RunId)
 		if err != nil {
 			// Older validation runs were created before the state query was

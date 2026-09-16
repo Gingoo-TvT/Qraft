@@ -14,6 +14,7 @@ import (
 	"github.com/Gingoo-TvT/Qraft/backend/internal/config"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/llm"
+	"github.com/Gingoo-TvT/Qraft/backend/internal/rating"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/repository"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
@@ -22,6 +23,7 @@ import (
 // Dependencies bundles all external dependencies that activities need. It is
 // constructed once at worker startup and shared across all activity executions.
 type Dependencies struct {
+	RatingStore             rating.Store
 	LLM                     LLMCompleter
 	LLMProvider             string
 	LLMModel                string

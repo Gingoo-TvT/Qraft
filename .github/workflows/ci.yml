@@ -52,7 +52,7 @@ jobs:
           go run ./cmd/migrate up
           go run ./cmd/migrate up
           # These packages share the disposable database; serialize recent-set assertions.
-          go test -p 1 -tags=integration ./internal/repository ./internal/service ./internal/handler -run 'TestProblemSet|TestAssemblyBank|TestQuestionSearch' -count=1 -v
+          go test -p 1 -tags=integration ./internal/repository ./internal/service ./internal/handler -run 'TestProblemSet|TestAssemblyBank|TestQuestionSearch|TestRating' -count=1 -v
 
 
   sandbox:
@@ -92,6 +92,7 @@ jobs:
       - run: npm run lint
       - run: npm run test:search
       - run: npm run test:desktop
+      - run: npm run test:rating
       - run: npm run build
       - run: npm run build:desktop
 
