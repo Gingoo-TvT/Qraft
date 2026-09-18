@@ -259,6 +259,12 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to configure set object reader")
 	}
+	ratingRepo := repository.NewRatingRepository(dbPool)
+	ratingRepo.SetArtifactReader(func(ctx context.Context, key string) ([]byte, error) {
+		return setObjects.DownloadFileLimited(ctx, key, 1<<20)
+	})
+	ratingRepo.SetArtifactDigester(minioclient.NewContentDigester(setObjects))
+	actDeps.RatingStore = ratingRepo
 	setService := service.NewProblemSetService(setRepo, setProblems, setQuizzes, service.NewHydroExportService(setProblems, setObjects), llmClient)
 	setSettings := handler.NewLLMSettingsHandler(repository.NewLLMProviderSettingsRepository(dbPool), settingsCipher, cfg.Anthropic)
 	setGeneration := service.NewProblemSetGenerationService(setService, setRepo, setProblems, setTags, temporalClient, cfg.Temporal.TaskQueue, service.NewProblemSetProviderResolver(setSettings, runtimeKeyStore))
@@ -279,9 +285,17 @@ func main() {
 	w.RegisterWorkflow(workflow.ProblemValidationWorkflow)
 	w.RegisterWorkflow(workflow.GPLTBatchGenerationWorkflow)
 	w.RegisterWorkflow(workflow.QuizGenerationWorkflow)
+	w.RegisterWorkflow(workflow.RatingWorkflow)
 
 	// Register activities.
 	acts := activities.New(actDeps)
+	w.RegisterActivity(acts.RatingLoadActivity)
+	w.RegisterActivity(acts.RatingBlindSolveActivity)
+	w.RegisterActivity(acts.RatingAnalyzeActivity)
+	w.RegisterActivity(acts.RatingVerifyActivity)
+	w.RegisterActivity(acts.RatingFinalizeActivity)
+	w.RegisterActivity(acts.RatingStateActivity)
+
 	w.RegisterActivity(acts.SimilarityCheckActivity)
 	w.RegisterActivity(acts.FetchProblemDataActivity)
 	w.RegisterActivity(acts.RefreshEditedProblemActivity)

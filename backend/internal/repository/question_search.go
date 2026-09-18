@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type QuestionSearchRepository struct{ db *pgxpool.Pool }
+type QuestionSearchRepository struct {
+	db      *pgxpool.Pool
+	ratings *RatingRepository
+}
 
 func NewQuestionSearchRepository(db *pgxpool.Pool) *QuestionSearchRepository {
 	return &QuestionSearchRepository{db: db}
@@ -84,10 +88,24 @@ func (r *QuestionSearchRepository) Search(ctx context.Context, filter domain.Que
 		Items: make([]domain.QuestionSearchItem, 0), Page: filter.Page, Size: filter.Size,
 	}
 	var data []byte
-	err = r.db.QueryRow(ctx, questionSearchQuery,
+	query := questionSearchQuery
+	var limit any = filter.Size
+	offset := (filter.Page - 1) * filter.Size
+	if filter.RatingBasis == "official" {
+		if r.ratings == nil {
+			return result, fmt.Errorf("正式评级暂不可用")
+		}
+		query = strings.Replace(query, "p.difficulty,", "ro.rating AS difficulty,", 1)
+		query = strings.Replace(query, "FROM problems p", "FROM problems p JOIN rating_official ro ON ro.problem_id=p.id", 1)
+		// Verify candidates before counting/pagination; stale rows must not produce
+		// phantom totals or sparse pages. SQL has already applied numeric filters.
+		limit = 201
+		offset = 0
+	}
+	err = r.db.QueryRow(ctx, query,
 		filter.Keyword, string(filter.Type), filter.Tag, filter.KnowledgePoint,
 		filter.MinDifficulty, filter.MaxDifficulty, string(filter.QuizDifficulty),
-		filter.Size, (filter.Page-1)*filter.Size,
+		limit, offset,
 	).Scan(&data, &result.Total)
 	if err != nil {
 		return result, fmt.Errorf("searching questions: %w", err)
@@ -95,5 +113,46 @@ func (r *QuestionSearchRepository) Search(ctx context.Context, filter domain.Que
 	if err := json.Unmarshal(data, &result.Items); err != nil {
 		return result, fmt.Errorf("decoding question search: %w", err)
 	}
+	if filter.RatingBasis == "official" {
+		if result.Total > 200 {
+			return result, fmt.Errorf("正式评级候选超过 200 道，请增加关键词、标签或缩小分数范围后再搜索")
+		}
+		verified := make([]domain.QuestionSearchItem, 0, len(result.Items))
+		for _, item := range result.Items {
+			if item.Source == "problem" {
+				official, err := r.ratings.CurrentOfficial(ctx, item.ID)
+				if err != nil {
+					return result, err
+				}
+				if official == nil || (filter.MinDifficulty != nil && official.Rating < *filter.MinDifficulty) || (filter.MaxDifficulty != nil && official.Rating > *filter.MaxDifficulty) {
+					continue
+				}
+				value := official.Rating
+				item.Difficulty = &value
+				item.RatingBasis = "official"
+			}
+			verified = append(verified, item)
+		}
+		result.Total = len(verified)
+		start := (filter.Page - 1) * filter.Size
+		if start > len(verified) {
+			start = len(verified)
+		}
+		end := start + filter.Size
+		if end > len(verified) {
+			end = len(verified)
+		}
+		result.Items = verified[start:end]
+	} else {
+		for i := range result.Items {
+			if result.Items[i].Source == "problem" {
+				result.Items[i].RatingBasis = "target"
+			}
+		}
+	}
 	return result, nil
+}
+
+func (r *QuestionSearchRepository) SetRatingRepository(ratings *RatingRepository) {
+	r.ratings = ratings
 }

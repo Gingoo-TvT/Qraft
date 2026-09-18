@@ -72,7 +72,7 @@ function assertPage(html, expected, route) {
 const businessRoutes = [
  '/problems', '/problems/new', '/quizzes', '/quizzes/new',
  '/problem-sets', '/problem-sets/new', '/problem-sets/assemble',
- '/settings', '/embedding', '/search', '/workflows',
+ '/settings', '/embedding', '/search', '/workflows', '/rating',
 ];
 
 test('local backend not started preserves home and each business destination', () => {
@@ -116,5 +116,16 @@ test('a ready connection shows the requested page without an offline notice', ()
 test('a fresh unconfigured client still opens welcome instead of a business page', () => {
  for (const route of ['/', '/problems/new', '/desktop/settings']) {
   assertPage(render(route, { mode: 'remote', configured: false }), 'welcome', route);
+ }
+});
+
+// Reviewer views are intentionally outside the administrative workbench.
+test('invited review remains isolated from business navigation on configured and fresh clients', () => {
+ for (const configured of [false, true]) {
+  const html = render('/rating/review', { configured });
+  assertPage(html, 'business', '/rating/review');
+  assert.ok(!html.includes('data-bundled-workbench'));
+  assert.ok(!html.includes('desktop-statusbar'));
+  assert.ok(!html.includes('服务连接提示'));
  }
 });

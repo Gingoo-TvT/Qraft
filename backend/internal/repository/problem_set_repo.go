@@ -19,7 +19,8 @@ import (
 // ProblemSetRepository persists contest sets, ordered mixed items, and the
 // append-only diversity ledger used by the quality gate.
 type ProblemSetRepository struct {
-	db *pgxpool.Pool
+	ratings *RatingRepository
+	db      *pgxpool.Pool
 }
 
 func NewProblemSetRepository(db *pgxpool.Pool) *ProblemSetRepository {
@@ -469,3 +470,5 @@ func nullableTime(value *time.Time) interface{} {
 	}
 	return *value
 }
+
+func (r *ProblemSetRepository) SetRatingRepository(ratings *RatingRepository) { r.ratings = ratings }

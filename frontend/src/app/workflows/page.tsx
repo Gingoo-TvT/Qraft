@@ -97,7 +97,7 @@ export default function WorkflowsPage() {
                         <StatusIcon status={workflow.status} />
                         <span className={cn('forge-badge', statusBadgeColor(friendly))}>{STATUS_LABELS[friendly] ?? friendly}</span>
                       </div>
-                      <Link href={`/workflows/${workflow.workflow_id}`} className="af-link mt-2 block max-w-[360px] break-all font-mono text-xs" title={workflow.workflow_id}>{workflow.workflow_id}</Link>
+                      <Link href={workflow.workflow_id.startsWith("rating-") ? "/rating?assessment=" + encodeURIComponent(workflow.workflow_id.slice(7)) : "/workflows/" + workflow.workflow_id} className="af-link mt-2 block max-w-[360px] break-all font-mono text-xs" title={workflow.workflow_id}>{workflow.workflow_id}</Link>
                     </td>
                     <td>{workflow.start_time ? <time dateTime={workflow.start_time} title={formatDate(workflow.start_time)}>
                       <span className="block">{formatRelativeTime(workflow.start_time)}</span>
@@ -110,7 +110,7 @@ export default function WorkflowsPage() {
                     <td>{workflow.failure_reason ? <p className="line-clamp-2 max-w-[240px] text-sm text-danger-500" title={workflow.failure_reason}>{workflow.failure_reason}</p>
                       : workflow.state?.problem_id ? <Link className="af-link inline-flex items-center gap-1" href={`/problems/${workflow.state.problem_id}`}>打开生成题目<ArrowUpRight className="h-3.5 w-3.5" /></Link>
                         : <span className="text-sm text-[var(--dm)]">在详情中查看执行记录</span>}</td>
-                    <td><Link href={`/workflows/${workflow.workflow_id}`} className="af-link whitespace-nowrap">查看详情</Link></td>
+                    <td><Link href={workflow.workflow_id.startsWith("rating-") ? "/rating?assessment=" + encodeURIComponent(workflow.workflow_id.slice(7)) : "/workflows/" + workflow.workflow_id} className="af-link whitespace-nowrap">查看详情</Link></td>
                   </tr>;
                 })}
             </tbody>

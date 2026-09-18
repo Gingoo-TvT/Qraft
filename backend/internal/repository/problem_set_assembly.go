@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 	"github.com/google/uuid"
@@ -15,6 +16,9 @@ var ErrProblemSetAssemblyChanged = errors.New("题库中的题目已发生变化
 // Only lightweight metadata crosses the repository boundary. The same query
 // validates submitted preview references, including recent-set exclusions.
 func (r *ProblemSetRepository) ListAssemblyCandidates(ctx context.Context, filter domain.ProblemSetAssemblyFilter, types []domain.QuizType) ([]domain.ProblemSetAssemblyCandidate, error) {
+	if filter.RatingBasis == "official" && r.ratings == nil {
+		return nil, fmt.Errorf("正式评级暂不可用")
+	}
 	typeNames := make([]string, len(types))
 	for i, typ := range types {
 		typeNames[i] = string(typ)
@@ -32,13 +36,13 @@ func (r *ProblemSetRepository) ListAssemblyCandidates(ctx context.Context, filte
   FROM problem_set_items i JOIN recent_sets s ON s.id=i.set_id JOIN quiz_problems q ON q.id=i.quiz_id
  ), candidates AS (
   SELECT p.id, 'programming' AS type, p.updated_at, p.serial_number::text AS code, p.title,
-   p.difficulty, '' AS quiz_difficulty, COALESCE(p.tags, '{}'::text[]) AS tags,
+   CASE WHEN $8='official' THEN ro.rating ELSE p.difficulty END AS difficulty, '' AS quiz_difficulty, COALESCE(p.tags, '{}'::text[]) AS tags,
    md5(regexp_replace(trim(p.statement), '[[:space:]]+', ' ', 'g')) AS fingerprint,
    p.statement
-  FROM problems p
+  FROM problems p LEFT JOIN rating_official ro ON ro.problem_id=p.id
   WHERE p.status='published' AND btrim(p.statement) <> ''
    AND NOT EXISTS (SELECT 1 FROM problem_quarantine_records qr WHERE qr.problem_id=p.id)
-   AND p.difficulty BETWEEN $4 AND $5
+   AND (CASE WHEN $8='official' THEN ro.rating ELSE p.difficulty END) BETWEEN $4 AND $5
    AND 'programming'=ANY($1::text[])
   UNION ALL
   SELECT q.id, q.type, q.updated_at, q.code, q.title, 0, q.difficulty,
@@ -57,7 +61,7 @@ func (r *ProblemSetRepository) ListAssemblyCandidates(ctx context.Context, filte
  WHERE (cardinality($2::text[])=0 OR EXISTS (SELECT 1 FROM unnest(c.tags) tag WHERE lower(trim(tag))=ANY($2::text[])))
   AND ($3='' OR strpos(lower(c.title || ' ' || c.statement),lower($3))>0)
   AND NOT EXISTS (SELECT 1 FROM recent r WHERE r.type=c.type AND (r.id=c.id OR r.fingerprint=c.fingerprint))
- ORDER BY c.type,c.id`, typeNames, filter.Tags, filter.Keyword, filter.MinDifficulty, filter.MaxDifficulty, filter.QuizDifficulty, filter.ExcludeRecentSets)
+ ORDER BY c.type,c.id`, typeNames, filter.Tags, filter.Keyword, filter.MinDifficulty, filter.MaxDifficulty, filter.QuizDifficulty, filter.ExcludeRecentSets, filter.RatingBasis)
 	if err != nil {
 		return nil, fmt.Errorf("listing assembly candidates: %w", err)
 	}
@@ -70,7 +74,42 @@ func (r *ProblemSetRepository) ListAssemblyCandidates(ctx context.Context, filte
 		}
 		out = append(out, item)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	if filter.RatingBasis == "official" {
+		count := 0
+		for _, item := range out {
+			if item.Type == domain.QuizTypeProgramming {
+				count++
+			}
+		}
+		if count > 200 {
+			return nil, fmt.Errorf("validation: 正式评级候选超过 200 道，请增加关键词、标签或缩小分数范围")
+		}
+	}
+	verified := make([]domain.ProblemSetAssemblyCandidate, 0, len(out))
+	for _, item := range out {
+		if item.Type == domain.QuizTypeProgramming {
+			item.RatingBasis = "target"
+			if filter.RatingBasis == "official" {
+				official, err := r.ratings.CurrentOfficial(ctx, item.ID)
+				if err != nil {
+					return nil, err
+				}
+				if official == nil || official.Rating < filter.MinDifficulty || official.Rating > filter.MaxDifficulty {
+					continue
+				}
+				item.Difficulty = official.Rating
+				item.RatingBasis = "official"
+				item.RatingSubjectHash = official.SubjectHash
+				item.RatingDecisionID = &official.DecisionID
+			}
+		}
+		verified = append(verified, item)
+	}
+	return verified, nil
 }
 
 // Source revisions are locked before inserting anything. A stale preview or an
@@ -81,7 +120,17 @@ func (r *ProblemSetRepository) CreateAssembled(ctx context.Context, set *domain.
 		return err
 	}
 	defer tx.Rollback(ctx)
-	for _, ref := range refs {
+	lockedRefs := append([]domain.ProblemSetAssemblyRef(nil), refs...)
+	sort.Slice(lockedRefs, func(i, j int) bool { return lockedRefs[i].ID.String() < lockedRefs[j].ID.String() })
+	for _, ref := range lockedRefs {
+		if ref.Type == domain.QuizTypeProgramming && set.GenerationConfig != nil && set.GenerationConfig.Assembly != nil && set.GenerationConfig.Assembly.RatingBasis == "official" {
+			if r.ratings == nil || ref.RatingDecisionID == nil || ref.RatingSubjectHash == "" {
+				return ErrProblemSetAssemblyChanged
+			}
+			if _, err := r.ratings.VerifyOfficialTx(ctx, tx, ref.ID, ref.RatingSubjectHash, *ref.RatingDecisionID); err != nil {
+				return ErrProblemSetAssemblyChanged
+			}
+		}
 		var id uuid.UUID
 		if ref.Type == domain.QuizTypeProgramming {
 			err = tx.QueryRow(ctx, `SELECT p.id FROM problems p WHERE p.id=$1 AND p.updated_at=$2 AND p.status='published'

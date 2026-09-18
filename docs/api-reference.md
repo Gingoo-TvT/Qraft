@@ -1683,3 +1683,7 @@ curl -X PUT http://localhost:18180/api/v1/settings/llm/statement \
 ### 5.3 DELETE /settings/llm/:purpose
 
 **清除 V 或 R 的独立覆盖并恢复继承。** `purpose` 只能是 `verification` 或 `review`；重复调用是幂等的，不能删除 G。删除 V 不会级联删除 R 的独立覆盖。响应为清除后重新解析的无凭据有效配置，`override_configured=false` 并带 `inherited_from`。
+
+## 题目评估与正式评级
+
+本分支新增独立评估、邀请评价、反馈复核与管理员确认 API。完整路径、权限与字段说明见[题目评估](problem-rating.md#api)。统一搜索及组卷支持显式 `rating_basis=official` 或 `target`；省略时兼容原有目标难度，正式值与原 `difficulty` 分开保存。

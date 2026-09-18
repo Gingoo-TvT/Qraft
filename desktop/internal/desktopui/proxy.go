@@ -54,6 +54,8 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request, path string) {
 		s.fail(w, e, 503)
 		return
 	}
+	// Invited reviews are anonymous even when the desktop has an admin session.
+	publicReview := relative.Path == "/api/v1/public/rating/review"
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	director := proxy.Director
 	proxy.Director = func(req *http.Request) {
@@ -66,14 +68,27 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request, path string) {
 		req.Header.Del("Cookie")
 		req.Header.Del("Origin")
 		req.Header.Del("Referer")
-		for _, cookie := range s.jar(target).Cookies(req.URL) {
-			req.AddCookie(cookie)
+		if publicReview {
+			req.Header.Del("Authorization")
+			req.Header.Del("Proxy-Authorization")
+			req.Header.Del("X-Actor")
+		} else {
+			req.Header.Del("X-Qraft-Review-Token")
+			for _, cookie := range s.jar(target).Cookies(req.URL) {
+				req.AddCookie(cookie)
+			}
 		}
 	}
 	proxy.ModifyResponse = func(res *http.Response) error {
-		s.jar(target).SetCookies(res.Request.URL, res.Cookies())
+		if !publicReview {
+			s.jar(target).SetCookies(res.Request.URL, res.Cookies())
+		}
 		res.Header.Del("Set-Cookie")
 		if res.StatusCode >= 300 && res.StatusCode < 400 {
+			// Never replay an invitation token at a redirected endpoint.
+			if publicReview {
+				return fmt.Errorf("评价接口不支持跳转，请检查服务地址")
+			}
 			location, e := res.Location()
 			if e != nil {
 				return e

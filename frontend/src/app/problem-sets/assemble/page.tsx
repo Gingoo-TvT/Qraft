@@ -21,6 +21,7 @@ export default function AssembleProblemSetPage() {
   const [config, setConfig] = useState(defaultSetGenerationConfig);
   const [tags, setTags] = useState('');
   const [keyword, setKeyword] = useState('');
+  const [ratingBasis, setRatingBasis] = useState<'target' | 'official'>('official');
   const [minDifficulty, setMinDifficulty] = useState(800);
   const [maxDifficulty, setMaxDifficulty] = useState(3500);
   const [quizDifficulty, setQuizDifficulty] = useState<'' | QuizDifficulty>('');
@@ -35,6 +36,7 @@ export default function AssembleProblemSetPage() {
     if (configError) { setError(configError); return; }
     const filter: ProblemSetAssemblyFilter = {
       tags: tags.split(/[,，\n]/).map((tag) => tag.trim()).filter(Boolean), keyword,
+      rating_basis: ratingBasis,
       min_difficulty: minDifficulty, max_difficulty: maxDifficulty, quiz_difficulty: quizDifficulty,
       exclude_recent_sets: recent, seed: crypto.randomUUID(),
     };
@@ -42,6 +44,9 @@ export default function AssembleProblemSetPage() {
     try {
       const response = await previewProblemSetAssembly({ config, filter });
       if (!response.data) throw new Error('服务没有返回选题结果。');
+      if (hasProgramming && ratingBasis === 'official' && response.data.filter.rating_basis !== 'official') {
+        throw new Error('当前服务尚不支持按正式评级组卷，请先升级服务端，或明确选择目标难度。');
+      }
       setPreview(response.data);
     } catch (cause) { setError(cause instanceof Error ? cause.message : '选题失败，请重试。'); }
     finally { setBusy(null); }
@@ -54,7 +59,7 @@ export default function AssembleProblemSetPage() {
     try {
       const response = await assembleProblemSet({
         title: title.trim(), kind, description: description.trim(), config, filter: preview.filter,
-        items: preview.items.map(({ id, type, updated_at }) => ({ id, type, updated_at })),
+        items: preview.items.map(({ id, type, updated_at, rating_subject_hash, rating_decision_id }) => ({ id, type, updated_at, rating_subject_hash, rating_decision_id })),
       });
       if (!response.data) throw new Error('服务没有返回保存结果。');
       router.push('/problem-sets/' + response.data.id);
@@ -86,6 +91,7 @@ export default function AssembleProblemSetPage() {
               <FormSection number="03" title="选题范围" description="留空表示不限；条件变化后需要重新预览。">
                 <label className="af-field"><span>标签 / 知识点</span><input className="forge-input" value={tags} onChange={(event) => setTags(event.target.value)} placeholder="图论，动态规划；留空不限" /><span className="af-hint">多个标签用逗号分隔，命中任意一个即可；客观题也匹配知识点名称。</span></label>
                 <label className="af-field"><span>题目关键词</span><input className="forge-input" maxLength={200} value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="匹配标题或题面；留空不限" /></label>
+                {hasProgramming && <label className="af-field"><span>编程题评分依据</span><select className="forge-input" value={ratingBasis} onChange={event => setRatingBasis(event.target.value as 'target' | 'official')}><option value="official">正式评级 · 仅使用管理员确认且仍有效的分数</option><option value="target">目标难度 · 使用出题时设定值</option></select><span className="af-hint">正式评级不足时可明确切换到目标难度；系统不会混合两种分数补足题量。</span></label>}
                 {hasProgramming && <div className="grid gap-4 sm:grid-cols-2"><label className="af-field"><span>编程题难度下限</span><input className="forge-input" type="number" min={800} max={3500} step={100} value={minDifficulty} onChange={(event) => setMinDifficulty(Number(event.target.value))} /></label><label className="af-field"><span>编程题难度上限</span><input className="forge-input" type="number" min={800} max={3500} step={100} value={maxDifficulty} onChange={(event) => setMaxDifficulty(Number(event.target.value))} /></label></div>}
                 {hasQuiz && <label className="af-field"><span>客观题难度</span><select className="forge-input" value={quizDifficulty} onChange={(event) => setQuizDifficulty(event.target.value as '' | QuizDifficulty)}><option value="">不限</option><option value="easy">简单</option><option value="medium">中等</option><option value="hard">困难</option></select></label>}
                 <details className="af-form-details"><summary><strong>历史复用设置</strong><span className="af-hint">当前避开最近 {recent} 套题集</span></summary><label className="af-field"><span>避开最近几套题集的题</span><input className="forge-input" type="number" min={0} max={50} step={1} value={recent} onChange={(event) => setRecent(Number(event.target.value))} /><span className="af-hint">填 0 允许复用历史题目。同一套内去除重复题目和相同题面；编程题仅从已发布且未隔离的题目中选择。</span></label></details>
@@ -100,7 +106,7 @@ export default function AssembleProblemSetPage() {
             {busy === 'preview' ? <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-sm text-[var(--dm)]"><Loader2 className="h-6 w-6 animate-spin" />正在从题库匹配题目…</div> : !preview ? <EmptyState icon={Shuffle} title="配置好后，先看实际选题" description="这里只展示按条件匹配到的真实题目。预览不会保存，确认结果后再创建题集。" action={<button type="button" className="forge-btn-secondary" onClick={() => void previewAssembly()} disabled={busy !== null}>预览组卷</button>} /> : <>
               <div className="grid grid-cols-2 gap-3">{preview.distribution.map((quota) => <div key={quota.type} className="rounded-lg border border-[var(--dl)] bg-[var(--ds)] p-3"><p className="text-sm font-medium">{typeName(quota.type)}</p><p className="af-hint mt-1">目标 {quota.requested} · 可选 {quota.available} · 已选 {quota.selected}</p>{quota.missing > 0 && <p className="mt-1 text-xs text-warning-600 dark:text-warning-400">还缺 {quota.missing} 道</p>}</div>)}</div>
               {preview.missing_count > 0 && <div role="status" className="rounded-lg bg-warning-50 p-4 text-sm text-warning-700 dark:bg-warning-500/10 dark:text-warning-300">符合条件的题目还缺 {preview.missing_count} 道。可以调整筛选，或先保存已有结果再补题。</div>}
-              {preview.items.length === 0 ? <EmptyState title="当前条件没有匹配题目" description="可以放宽筛选条件、减少回看题集数，或先向题库添加题目。" /> : <div className="af-table-panel max-h-[32rem] overflow-auto"><table className="forge-table"><thead><tr><th>题目</th><th>题型 / 难度</th><th>分值</th></tr></thead><tbody>{preview.items.map((item, index) => <tr key={item.type + item.id}><td><Link className="af-link font-medium" href={(item.type === 'programming' ? '/problems/' : '/quizzes/') + item.id} target="_blank" rel="noreferrer">{index + 1}. {item.title}</Link><p className="af-hint mt-1">{item.code}</p><p className="af-hint">{(item.tags ?? []).slice(0, 6).join(' / ')}</p></td><td className="whitespace-nowrap">{typeName(item.type)}<p className="af-hint">{item.type === 'programming' ? item.difficulty : difficultyNames[item.quiz_difficulty ?? '']}</p></td><td>{item.score}</td></tr>)}</tbody></table></div>}
+              {preview.items.length === 0 ? <EmptyState title="当前条件没有匹配题目" description="可以放宽筛选条件、减少回看题集数，或先向题库添加题目。" /> : <div className="af-table-panel max-h-[32rem] overflow-auto"><table className="forge-table"><thead><tr><th>题目</th><th>题型 / 难度</th><th>分值</th></tr></thead><tbody>{preview.items.map((item, index) => <tr key={item.type + item.id}><td><Link className="af-link font-medium" href={(item.type === 'programming' ? '/problems/' : '/quizzes/') + item.id} target="_blank" rel="noreferrer">{index + 1}. {item.title}</Link><p className="af-hint mt-1">{item.code}</p><p className="af-hint">{(item.tags ?? []).slice(0, 6).join(' / ')}</p></td><td className="whitespace-nowrap">{typeName(item.type)}<p className="af-hint">{item.type === 'programming' ? (item.rating_basis === 'official' ? '正式 ' : '目标 ') + item.difficulty : difficultyNames[item.quiz_difficulty ?? '']}</p></td><td>{item.score}</td></tr>)}</tbody></table></div>}
             </>}
             <div className="af-sticky-actions"><button type="button" className="forge-btn-primary w-full" onClick={() => void save()} disabled={busy !== null || !preview?.items.length}>{busy === 'save' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{preview && preview.missing_count > 0 ? '保存已有结果' : '保存组卷'}</button><p className="af-hint">保存本次预览的题目。之后仍可增删、调整顺序并导出；换一批可能包含相同题目。</p></div>
           </section>

@@ -17,7 +17,7 @@ const parse = text => parseQuestionSearch(new URLSearchParams(text));
 test('query roundtrip preserves leading zero IDs, Unicode, literal wildcards and combined filters', () => {
  const filter = {q:'000123 中文_% &+', type:'choice', tag:'图&树', knowledge_point:'01_图', quiz_difficulty:'hard', page:3, size:20};
  const href = questionResultsHref(filter);
- assert.deepEqual(parse(href.split('?')[1]), {...filter, min_difficulty:undefined, max_difficulty:undefined});
+ assert.deepEqual(parse(href.split('?')[1]), {...filter, rating_basis:undefined, min_difficulty:undefined, max_difficulty:undefined});
 });
 
 test('URL state retains native difficulty scales and ignores invalid pagination', () => {
@@ -48,4 +48,12 @@ test('detail links depend on source even when both libraries contain programming
  const id = '00000000-0000-0000-0000-000000000123';
  assert.equal(questionDetailHref({source:'problem',type:'programming',id}), '/problems/'+id);
  assert.equal(questionDetailHref({source:'quiz',type:'programming',id}), '/quizzes/'+id);
+});
+
+test('numeric searches select official ratings by default and preserve an explicit target choice', () => {
+ assert.equal(parse('min_difficulty=1200').rating_basis, 'official');
+ assert.equal(parse('min_difficulty=1200&rating_basis=target').rating_basis, 'target');
+ assert.equal(parse('q=hello').rating_basis, undefined);
+ const original = parse('q=hello&min_difficulty=1200&rating_basis=target');
+ assert.deepEqual(parse(questionResultsHref(original).split('?')[1]), original);
 });

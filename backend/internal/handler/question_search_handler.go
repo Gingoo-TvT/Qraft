@@ -29,6 +29,9 @@ func (h *QuestionSearchHandler) HandleSearch(c echo.Context) error {
 	result, err := h.repo.Search(c.Request().Context(), filter)
 	if err != nil {
 		c.Logger().Errorf("question search: %v", err)
+		if strings.Contains(err.Error(), "正式评级候选超过") {
+			return badRequest(c, "RATING_FILTER_TOO_BROAD", err.Error())
+		}
 		return internalError(c, "题目搜索失败，请稍后重试")
 	}
 	if result.Items == nil {
@@ -36,16 +39,17 @@ func (h *QuestionSearchHandler) HandleSearch(c echo.Context) error {
 	}
 	// Total is explicit even at zero, unlike the optional generic Meta fields.
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"success": true, "data": result.Items,
+		"success": true, "data": result.Items, "rating_basis": filter.RatingBasis,
 		"meta": map[string]int{"total": result.Total, "page": result.Page, "size": result.Size},
 	})
 }
 
 func questionSearchFilterFromQuery(c echo.Context) (domain.QuestionSearchFilter, error) {
 	filter := domain.QuestionSearchFilter{
-		Keyword: c.QueryParam("q"),
-		Type:    domain.QuizType(strings.TrimSpace(c.QueryParam("type"))),
-		Tag:     c.QueryParam("tag"), KnowledgePoint: c.QueryParam("knowledge_point"),
+		RatingBasis: c.QueryParam("rating_basis"),
+		Keyword:     c.QueryParam("q"),
+		Type:        domain.QuizType(strings.TrimSpace(c.QueryParam("type"))),
+		Tag:         c.QueryParam("tag"), KnowledgePoint: c.QueryParam("knowledge_point"),
 		QuizDifficulty: domain.QuizDifficulty(strings.TrimSpace(c.QueryParam("quiz_difficulty"))),
 		Page:           1, Size: 20,
 	}

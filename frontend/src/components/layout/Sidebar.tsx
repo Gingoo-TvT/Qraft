@@ -18,7 +18,7 @@ const LIBRARY: NavItem[] = [
  { label:'客观题库', href:'/quizzes', icon:ListChecks },
  { label:'题集管理', href:'/problem-sets', icon:BookMarked },
 ];
-const TASKS: NavItem[] = [{ label:'任务中心', href:'/workflows', icon:GitBranch }];
+const TASKS: NavItem[] = [{ label:'题目评估', href:'/rating', icon:SlidersHorizontal }, { label:'任务中心', href:'/workflows', icon:GitBranch }];
 const TOOLS: NavItem[] = [
  { label:'客观题生成', href:'/quizzes/new', icon:Plus },
  { label:'Excel 导入', href:'/quizzes/import', icon:Upload },

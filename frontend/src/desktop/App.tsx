@@ -14,7 +14,7 @@ import { startupPath } from './startup-path';
 import { boot, nativeRequest, useDesktop, type ExportRecord } from './runtime';
 
 const groups = [
- { label: '工作空间', items: [{ to: '/', name: '工作台', icon: LayoutDashboard }, { to: '/problems/new', name: '创建题目', icon: Plus }, { to: '/problem-sets/new', name: '生成题集', icon: Sparkles }, { to: '/problem-sets/assemble', name: '题库组卷', icon: Layers3 }, { to: '/workflows', name: '任务中心', icon: Workflow }] },
+ { label: '工作空间', items: [{ to: '/', name: '工作台', icon: LayoutDashboard }, { to: '/problems/new', name: '创建题目', icon: Plus }, { to: '/problem-sets/new', name: '生成题集', icon: Sparkles }, { to: '/problem-sets/assemble', name: '题库组卷', icon: Layers3 }, { to: '/rating', name: '题目评估', icon: ListChecks }, { to: '/workflows', name: '任务中心', icon: Workflow }] },
  { label: '内容管理', items: [{ to: '/problems', name: '编程题库', icon: FileText }, { to: '/quizzes', name: '客观题库', icon: BookOpen }, { to: '/problem-sets', name: '题集管理', icon: FolderOpen }, { to: '/problems/quarantine', name: '隔离区', icon: ShieldCheck }] },
  { label: '工具与配置', items: [{ to: '/knowledge-points', name: '知识点目录', icon: Tag }, { to: '/settings', name: '模型配置', icon: Settings2 }, { to: '/embedding', name: '去重服务', icon: Boxes }] },
 ];
@@ -50,6 +50,7 @@ export default function App() {
  }, []);
  useEffect(() => {
   const handler = (event: KeyboardEvent) => {
+   if (window.location.pathname.endsWith('/rating/review')) return;
    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'k') { event.preventDefault(); setPalette(value => !value); }
    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'n') { event.preventDefault(); navigate(event.shiftKey ? '/problem-sets/new' : '/problems/new'); }
    if ((event.ctrlKey || event.metaKey) && event.key === ',') { event.preventDefault(); navigate('/desktop/settings'); }
@@ -94,6 +95,7 @@ export default function App() {
   window.addEventListener('algoforge:exported', exported);
   return () => window.removeEventListener('algoforge:exported', exported);
  }, [setNotice]);
+ if (path === '/rating/review' && Page) return <div className="af-standalone font-sans"><PageBoundary key={path}><Suspense fallback={<p role="status">正在打开评价…</p>}><Page /></Suspense></PageBoundary></div>;
  if (!state.configured) return <Welcome />;
  function select(to: string) { setPalette(false); setQuery(''); navigate(to); }
  return <div className={'af-shell af-desktop font-sans' + (preferences.sidebar_collapsed ? ' is-collapsed' : '') + (mobileOpen ? ' is-mobile-open' : '')} data-bundled-workbench="true">

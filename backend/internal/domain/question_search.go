@@ -12,6 +12,7 @@ import (
 // QuestionSearchItem keeps each source's identity and difficulty scale. Source,
 // not Type, determines whether the detail belongs to /problems or /quizzes.
 type QuestionSearchItem struct {
+	RatingBasis     string         `json:"rating_basis,omitempty"`
 	ID              uuid.UUID      `json:"id"`
 	Source          string         `json:"source"`
 	Type            QuizType       `json:"type"`
@@ -27,6 +28,7 @@ type QuestionSearchItem struct {
 }
 
 type QuestionSearchFilter struct {
+	RatingBasis    string
 	Keyword        string
 	Type           QuizType
 	Tag            string
@@ -48,6 +50,12 @@ type QuestionSearchResult struct {
 // Normalize applies bounded pagination and rejects mixed difficulty scales.
 // Text filters are literal substrings: SQL wildcard syntax has no special role.
 func (f QuestionSearchFilter) Normalize() (QuestionSearchFilter, error) {
+	if f.RatingBasis == "" {
+		f.RatingBasis = "target"
+	}
+	if f.RatingBasis != "target" && f.RatingBasis != "official" {
+		return f, fmt.Errorf("评分依据须为目标难度或正式评级")
+	}
 	f.Keyword = strings.TrimSpace(f.Keyword)
 	f.Tag = strings.TrimSpace(f.Tag)
 	f.KnowledgePoint = strings.TrimSpace(f.KnowledgePoint)
