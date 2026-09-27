@@ -32,3 +32,20 @@ test('Hydro ignores template catalog and a cancelled native save stays quiet',as
  let sent;const lib=load({desktop:{base:'/desktop',state:{service_url:'https://example.test'}},fetcher:async(url,options)=>{sent=JSON.parse(options.body);return {ok:true,json:async()=>({success:true,data:{status:'cancelled'}})}}});
  await lib.downloadProblemSetTesting('set','hydro','set.zip',{activeTagsTree:[]});assert.equal(sent.body,undefined);assert.equal(lib.events.length,0);
 });
+
+test('custom numbers reach web and native exports, preserving the catalog',async()=>{
+ let request;const numbering={prefix:'Demo',start:50};
+ const web=load({fetcher:async(url,options)=>{request={url,...options};return {ok:true,headers:{get:()=> 'application/zip'},blob:async()=>({})}}});
+ await web.downloadProblemSetTesting('set','generic','set.zip',{activeTagsTree:[]},numbering);
+ assert.match(request.url,/&id_prefix=Demo&start_index=50$/);assert.ok(JSON.parse(request.body).tag_catalog);
+ const native=load({desktop:{base:'/desktop',state:{service_url:'https://example.test'}},fetcher:async(url,options)=>{request=JSON.parse(options.body);return {ok:true,json:async()=>({success:true,data:{status:'cancelled'}})}}});
+ await native.downloadProblemSetTesting('set','hydro','set.zip',undefined,numbering);
+ assert.match(request.path,/id_prefix=Demo&start_index=50$/);assert.equal(request.body,undefined);
+});
+test('invalid custom numbers fail before making a request',async()=>{
+ let requests=0;const lib=load({fetcher:async()=>{requests++;throw Error('unexpected request')}});
+ for(const numbering of [{prefix:'../bad',start:1},{prefix:'Demo',start:0},{prefix:'Demo',start:1.5},{prefix:'Demo',start:1000000}]) {
+  await assert.rejects(lib.downloadProblemSetTesting('set','generic','set.zip',undefined,numbering));
+ }
+ assert.equal(requests,0);
+});

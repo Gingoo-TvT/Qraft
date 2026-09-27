@@ -220,6 +220,15 @@ func (h *ProblemSetHandler) HandleExport(c echo.Context) error {
 	}
 	mode, format := c.QueryParam("mode"), c.QueryParam("format")
 	var options service.TestingExportOptions
+	if c.QueryParam("id_prefix") != "" || c.QueryParam("start_index") != "" {
+		if mode != "testing" {
+			return badRequest(c, "INVALID_PARAMS", "自定义编号仅用于 OJ 测试包")
+		}
+		options.Numbering, err = service.ParseTestingExportNumbering(c.QueryParam("id_prefix"), c.QueryParam("start_index"))
+		if err != nil {
+			return badRequest(c, "INVALID_PARAMS", err.Error())
+		}
+	}
 	if c.Request().Method == http.MethodPost {
 		if mode != "testing" || format != "generic" {
 			return badRequest(c, "INVALID_PARAMS", "POST export only supports generic testing ZIP")

@@ -193,6 +193,18 @@ func TestDirectImportResumeKeepsStoredProblemsAndDoesNotRunKC(t *testing.T) {
 }
 
 func TestImportedProblemChecksNewExampleWithBothSolutions(t *testing.T) {
+	testImportedExampleOracle(t, "generated", false)
+}
+
+func TestImportedProblemChecksOriginalExampleWithBothSolutions(t *testing.T) {
+	testImportedExampleOracle(t, "source", false)
+}
+
+func TestImportedProblemRejectsOriginalExampleRoundingMismatch(t *testing.T) {
+	testImportedExampleOracle(t, "source", true)
+}
+
+func testImportedExampleOracle(t *testing.T, origin string, roundingMismatch bool) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
 	source := domain.SourceProblem{ItemID: "one", Title: "Preserved", Statement: "Original $a+b$\n```\n1 2\n```\n"}
@@ -202,7 +214,7 @@ func TestImportedProblemChecksNewExampleWithBothSolutions(t *testing.T) {
 		return &activities.ImportDuplicateResult{}, nil
 	}, activity.RegisterOptions{Name: "CheckImportedDuplicateActivity"})
 	env.RegisterActivityWithOptions(func(context.Context, activities.PrepareImportedStatementInput) (*activities.PreparedImportedStatement, error) {
-		return &activities.PreparedImportedStatement{Statement: activities.StatementResult{Title: source.Title, Statement: source.Statement}, Evidence: domain.ImportSourceEvidence{Original: source, OriginalSHA256: source.Hash(), FinalSHA256: source.Hash()}, Samples: []activities.ImportedSample{{Input: "2", Output: "3", Origin: "generated"}}, TimeLimit: 2000, MemoryLimit: 256}, nil
+		return &activities.PreparedImportedStatement{Statement: activities.StatementResult{Title: source.Title, Statement: source.Statement}, Evidence: domain.ImportSourceEvidence{Original: source, OriginalSHA256: source.Hash(), FinalSHA256: source.Hash()}, Samples: []activities.ImportedSample{{Input: "2.469 2", Output: "1.235", Origin: origin}}, TimeLimit: 2000, MemoryLimit: 256}, nil
 	}, activity.RegisterOptions{Name: "PrepareImportedStatementActivity"})
 	data := activities.TestDataResult{PayloadVersion: activities.ActivityPayloadVersion, TestCases: make([]activities.TestCaseData, 10)}
 	for i := range data.TestCases {
@@ -220,15 +232,38 @@ func TestImportedProblemChecksNewExampleWithBothSolutions(t *testing.T) {
 	env.RegisterActivityWithOptions(func(context.Context, []domain.Solution) (*activities.CompileCheckResult, error) {
 		return &activities.CompileCheckResult{AllCompiled: true}, nil
 	}, activity.RegisterOptions{Name: "CompileCheckActivity"})
+	repairs := 0
+	env.RegisterActivityWithOptions(func(_ context.Context, in activities.GenerateSolutionRepairInput) (*activities.SolutionResult, error) {
+		repairs++
+		require.NotEmpty(t, in.Feedback.Mismatches)
+		return &activities.SolutionResult{MainSolution: domain.Solution{SolutionType: domain.SolutionTypeMain}, BruteSolution: domain.Solution{SolutionType: domain.SolutionTypeBrute}}, nil
+	}, activity.RegisterOptions{Name: "RepairSolutionActivity"})
 	sampleRuns := map[domain.SolutionType]int{}
 	env.RegisterActivityWithOptions(func(_ context.Context, s domain.Solution, cases []activities.TestCaseData, l activities.ExecutionLimits) (*activities.SandboxResult, error) {
 		if len(cases) == 1 && cases[0].Origin == activities.TestCaseOriginCustom {
 			sampleRuns[s.SolutionType]++
 		}
-		return &activities.SandboxResult{PayloadVersion: activities.ActivityPayloadVersion, Outputs: make([]string, len(cases))}, nil
+		outputs := make([]string, len(cases))
+		for i, c := range cases {
+			outputs[i] = "ok"
+			if c.Origin == activities.TestCaseOriginCustom {
+				outputs[i] = "1.235"
+				if roundingMismatch && s.SolutionType == domain.SolutionTypeBrute {
+					outputs[i] = "1.234"
+				}
+			}
+		}
+		return &activities.SandboxResult{PayloadVersion: activities.ActivityPayloadVersion, Outputs: outputs}, nil
 	}, activity.RegisterOptions{Name: "RunSandboxActivity"})
-	env.RegisterActivityWithOptions(func(context.Context, activities.SandboxResult, activities.SandboxResult) (*activities.ValidationResult, error) {
-		return &activities.ValidationResult{AllPassed: true}, nil
+	env.RegisterActivityWithOptions(func(_ context.Context, a, b activities.SandboxResult) (*activities.ValidationResult, error) {
+		result := &activities.ValidationResult{AllPassed: true}
+		for i := range a.Outputs {
+			if a.Outputs[i] != b.Outputs[i] {
+				result.AllPassed = false
+				result.Mismatches = append(result.Mismatches, activities.Mismatch{TestIndex: i, MainOutput: a.Outputs[i], BruteOutput: b.Outputs[i]})
+			}
+		}
+		return result, nil
 	}, activity.RegisterOptions{Name: "ValidateActivity"})
 	env.RegisterActivityWithOptions(func(_ context.Context, in activities.BuildTestManifestInput) (*activities.TestManifestV1, error) {
 		require.NotEmpty(t, in.BruteIndices)
@@ -243,6 +278,12 @@ func TestImportedProblemChecksNewExampleWithBothSolutions(t *testing.T) {
 		return &activities.StoreResult{ProblemID: uuid.New(), Status: domain.ProblemStatusDraft}, nil
 	}, activity.RegisterOptions{Name: "StoreProblemActivity"})
 	env.ExecuteWorkflow(ImportedProblemWorkflow, ImportedProblemInput{Source: source, Params: params})
+	if roundingMismatch {
+		require.ErrorContains(t, env.GetWorkflowError(), "statement example disagrees with independent solution")
+		require.Equal(t, 2, repairs)
+		require.Equal(t, 3, sampleRuns[domain.SolutionTypeBrute])
+		return
+	}
 	require.NoError(t, env.GetWorkflowError())
 	var result domain.ProblemImportItemResult
 	require.NoError(t, env.GetWorkflowResult(&result))

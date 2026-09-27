@@ -15,21 +15,32 @@ export function parseExportTagCatalog(text: string): { activeTagsTree: unknown[]
  return result;
 }
 
-export async function downloadProblemSetTesting(id: string, format: 'generic' | 'hydro', name: string, tagCatalog?: { activeTagsTree: unknown[] }): Promise<void> {
+export interface ExportNumbering { prefix: string; start: number }
+
+export function exportNumberingQuery(numbering?: ExportNumbering): string {
+ if (!numbering) return '';
+ if (!/^[A-Za-z0-9_-]{0,24}$/.test(numbering.prefix) || !Number.isSafeInteger(numbering.start) || numbering.start < 1 || numbering.start > 999999) {
+  throw new Error('编号前缀最多 24 位，仅支持英文字母、数字、下划线和连字符；起始编号须为 1 到 999999 的整数。');
+ }
+ return '&id_prefix=' + encodeURIComponent(numbering.prefix) + '&start_index=' + numbering.start;
+}
+
+export async function downloadProblemSetTesting(id: string, format: 'generic' | 'hydro', name: string, tagCatalog?: { activeTagsTree: unknown[] }, numbering?: ExportNumbering): Promise<void> {
  const payload = format === 'generic' && tagCatalog ? { tag_catalog: tagCatalog } : undefined;
+ const numberingQuery = exportNumberingQuery(numbering);
  const desktop = desktopRuntime();
  if (desktop) {
   const response = await fetch(desktop.base + '/native/download', {
    method: 'POST',
    headers: { 'Content-Type': 'application/json', 'X-Qraft-Service': desktop.state.service_url, 'X-CSRF-Token': currentSession()?.csrf_token ?? '' },
-   body: JSON.stringify({ path: '/api/v1/problem-sets/' + encodeURIComponent(id) + '/export.zip?mode=testing&format=' + format, name, ...(payload ? { body: payload } : {}) }),
+   body: JSON.stringify({ path: '/api/v1/problem-sets/' + encodeURIComponent(id) + '/export.zip?mode=testing&format=' + format + numberingQuery, name, ...(payload ? { body: payload } : {}) }),
   });
   const body = await response.json();
   if (!response.ok || !body.success) throw new Error(body.error?.message ?? 'ZIP 保存失败；带标签的导出需要更新桌面客户端。');
   if (body.data?.status !== 'cancelled') window.dispatchEvent(new CustomEvent('algoforge:exported', { detail: body.data }));
   return;
  }
- const response = await serviceFetch(exportProblemSetTestingURL(id, format), payload ? {
+ const response = await serviceFetch(exportProblemSetTestingURL(id, format) + numberingQuery, payload ? {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
  } : {});
  if (!response.ok) {

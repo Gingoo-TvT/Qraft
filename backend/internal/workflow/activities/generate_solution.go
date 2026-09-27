@@ -279,7 +279,7 @@ IMPORTANT — Simplicity principle:
   "greedy ordering by Y is sufficient"), state it and build the solution on it.
 - Do NOT reach for complex data structures (LCA, segment tree, etc.) when a simpler
   invariant makes them unnecessary.
-- The explanation field MUST state the key insight first, then the algorithm.` + contestSolutionSkillGuidance
+- The explanation field MUST state the key insight first, then the algorithm.` + numericOutputContract + contestSolutionSkillGuidance
 
 // buildMainSolutionPrompt creates the prompt for generating the optimal solution.
 func buildMainSolutionPrompt(statement, language string, params domain.ProblemGenParams) string {

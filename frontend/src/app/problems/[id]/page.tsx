@@ -5,7 +5,8 @@ import { useEditorTheme } from '@/hooks/useEditorTheme';
 import { ViewTabs, ViewPanel } from '@/components/ui/ViewTabs';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { problemListReturnTo, problemDetailHref } from '@/lib/problem-list-location';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import {
@@ -432,6 +433,7 @@ export default function ProblemDetailPage() {
   const [detailTab, setDetailTab] = useState('statement');
   const params = useParams();
   const router = useRouter();
+  const returnTo = problemListReturnTo(useSearchParams().get('returnTo'));
   const id = params.id as string;
 
   const { problem, loading, error, refresh } = useProblem(id);
@@ -604,13 +606,13 @@ export default function ProblemDetailPage() {
     setDeleting(true);
     try {
       await deleteProblem(id);
-      router.push('/problems');
+      router.push(returnTo);
     } catch {
       alert('删除失败');
     } finally {
       setDeleting(false);
     }
-  }, [id, router]);
+  }, [id, router, returnTo]);
 
   // Loading state
   if (loading) {
@@ -638,7 +640,7 @@ export default function ProblemDetailPage() {
         <div className="flex flex-col items-center justify-center gap-4 py-20">
           <AlertTriangle className="h-12 w-12 text-danger-400" />
           <p className="text-danger-500">{error ?? '题目未找到'}</p>
-          <Link href="/problems" className="forge-btn-secondary">
+          <Link href={returnTo} className="forge-btn-secondary">
             <ArrowLeft className="h-4 w-4" />
             返回列表
           </Link>
@@ -656,7 +658,7 @@ export default function ProblemDetailPage() {
     <div className="af-page af-detail-page">
       {/* Back link */}
       <Link
-        href="/problems"
+        href={returnTo}
         className="inline-flex items-center gap-1 text-sm text-anvil-500 hover:text-anvil-700 dark:text-anvil-400 dark:hover:text-anvil-200"
       >
         <ArrowLeft className="h-4 w-4" />
@@ -734,7 +736,7 @@ export default function ProblemDetailPage() {
           </a>
           {isAdmin && <Link href={"/rating?problem=" + encodeURIComponent(problem.id)} className="forge-btn-secondary">题目评估</Link>}
           {isAdmin && <Link
-            href={`/problems/${problem.id}/edit`}
+            href={problemDetailHref(problem.id, returnTo, true)}
             className="forge-btn-secondary"
           >
             <Edit className="h-4 w-4" />
@@ -866,6 +868,7 @@ export default function ProblemDetailPage() {
           icon={Code2}
           defaultOpen={false}
         >
+          {solution.solution_type === 'brute' && <p className="mb-3 text-sm text-anvil-500">此程序用于小规模对拍，大规模数据可能超时。输出精度与舍入规则仍须遵守题面要求。</p>}
           <div className="monaco-container">
             <MonacoEditor
               height="400px"
@@ -984,7 +987,7 @@ export default function ProblemDetailPage() {
               验证
             </button>
             {isAdmin && <Link
-              href={`/problems/${problem.id}/edit`}
+              href={problemDetailHref(problem.id, returnTo, true)}
               className="forge-btn-secondary"
             >
               <Edit className="h-4 w-4" />

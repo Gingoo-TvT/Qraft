@@ -66,6 +66,7 @@ func ImportedProblemWorkflow(ctx workflow.Context, in ImportedProblemInput) (res
 	}
 	normalizeOJ := workflow.GetVersion(ctx, "import-oj-statement-v1", workflow.DefaultVersion, 1) >= 1
 	deploymentLimits := workflow.GetVersion(ctx, "import-deployment-limits-v1", workflow.DefaultVersion, 1) >= 1
+	checkSourceExamples := workflow.GetVersion(ctx, "import-source-example-oracle-v1", workflow.DefaultVersion, 1) >= 1
 	var prepared activities.PreparedImportedStatement
 	if err = run(slow, domain.StepGenerateStatement, "PrepareImportedStatementActivity", &prepared, activities.PrepareImportedStatementInput{Source: in.Source, Params: params, NormalizeOJ: normalizeOJ}); err != nil {
 		return result, err
@@ -138,13 +139,14 @@ func ImportedProblemWorkflow(ctx workflow.Context, in ImportedProblemInput) (res
 				}
 			}
 		}
-		// Newly supplied examples must agree with an independent implementation,
-		// not merely with the solution authored from the same statement.
-		if err == nil && normalizeOJ {
+		// Check source examples with the oracle too: generated random cases can
+		// miss a rounding tie that an original example already demonstrates.
+		// The version marker preserves the command sequence of existing histories.
+		if err == nil && (normalizeOJ || checkSourceExamples) {
 			var cases []activities.TestCaseData
 			expected := activities.SandboxResult{PayloadVersion: activities.ActivityPayloadVersion}
 			for _, sample := range prepared.Samples {
-				if sample.Origin == "generated" {
+				if sample.Origin == "generated" || checkSourceExamples {
 					cases = append(cases, activities.TestCaseData{Input: sample.Input, Origin: activities.TestCaseOriginCustom})
 					expected.Outputs = append(expected.Outputs, sample.Output)
 				}
@@ -155,7 +157,7 @@ func ImportedProblemWorkflow(ctx workflow.Context, in ImportedProblemInput) (res
 				if err == nil {
 					err = run(fast, domain.StepValidate, "ValidateActivity", &checked, sampleBrute, expected)
 					if err == nil && !checked.AllPassed {
-						err = fmt.Errorf("new statement example disagrees with independent solution")
+						err = fmt.Errorf("statement example disagrees with independent solution")
 					}
 				}
 			}

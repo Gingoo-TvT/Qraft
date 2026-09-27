@@ -52,7 +52,7 @@ jobs:
           go run ./cmd/migrate up
           go run ./cmd/migrate up
           # These packages share the disposable database; serialize recent-set assertions.
-          go test -p 1 -tags=integration ./internal/identity ./internal/repository ./internal/service ./internal/handler -run 'TestIdentity|TestAuth|TestWorkflowOwner|TestSetAndQuizShared|TestShared|TestProblemSet|TestProblemImport|TestAssemblyBank|TestQuestionSearch|TestRating|TestEmbeddingActivation' -count=1 -v
+          go test -p 1 -tags=integration ./internal/identity ./internal/repository ./internal/service ./internal/handler -run 'TestIdentity|TestAuth|TestWorkflowOwner|TestSetAndQuizShared|TestShared|TestProblemSet|TestProblemImport|TestAssemblyBank|TestQuestionSearch|TestRating|TestEmbeddingActivation|TestProblemEdit' -count=1 -v
 
 
   sandbox:
@@ -97,6 +97,7 @@ jobs:
       - run: npm run test:embedding
       - run: npm run test:model-overrides
       - run: npm run test:imports
+      - run: npm run test:issues
       - run: npm run build
       - run: npm run build:desktop
 

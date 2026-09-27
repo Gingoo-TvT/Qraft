@@ -480,6 +480,13 @@ GENERATOR ACCEPTANCE CHECKLIST:
 - Every branch emits all required fields, including n/m/t headers when the
   statement declares them, and respects both its group bounds and the global
   byte limits.
+- For fixed-decimal output, construct exact half-unit rounding ties and the
+  nearest legal inputs on both sides using exact decimal/rational arithmetic,
+  plus zero, carry and negative cases where legal. Put small representatives
+  in the actual differential subset (BruteCheck groups, or public samples when
+  no such groups exist), tagged threshold/adversarial and small_exhaustive.
+  Random floating-point inputs alone are insufficient. Match the statement's
+  tie rule and input precision; never generate out-of-domain decimals.
 - A BruteCheck branch is small enough for the independent oracle; a maximum
   branch is reserved for the main solution and is never sent to the oracle.
 - The program compiles with the selected language standard and exits normally

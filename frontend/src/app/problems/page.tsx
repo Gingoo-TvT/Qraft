@@ -1,7 +1,8 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { problemFilterFromQuery, problemListHref, problemDetailHref } from '@/lib/problem-list-location';
 import Link from 'next/link';
 import {
   BookOpen,
@@ -325,7 +326,9 @@ function FilterBar({ filter, onFilterChange }: FilterBarProps) {
 
 function ProblemsList() {
   const searchParams = useSearchParams();
-  const querySearch = searchParams.get('search') ?? '';
+  const router = useRouter();
+  const query = searchParams.toString();
+  const initialFilter = useMemo(() => problemFilterFromQuery(query), [query]);
   const targetSetID = searchParams.get('set') ?? undefined;
   const [selected, setSelected] = useState<Problem[]>([]);
   const [savingSelection, setSavingSelection] = useState(false);
@@ -333,14 +336,13 @@ function ProblemsList() {
   function selectProblem(problem: Problem, checked: boolean) {
     setSelected(current => checked ? (current.some(item => item.id === problem.id) ? current : [...current, problem]) : current.filter(item => item.id !== problem.id));
   }
-  const previousSearch = useRef(querySearch);
-  const { problems, total, page, loading, error, refresh, setFilter, filter } =
-    useProblems({ page: 1, size: DEFAULT_PAGE_SIZE, sort_by: 'created_at', sort_order: 'desc', search: querySearch || undefined });
-  useEffect(() => {
-    if (previousSearch.current === querySearch) return;
-    previousSearch.current = querySearch;
-    setFilter({ ...filter, page: 1, search: querySearch || undefined });
-  }, [querySearch, filter, setFilter]);
+  const { problems, total, page, loading, error, refresh, setFilter: setStoredFilter, filter } = useProblems(initialFilter);
+  useEffect(() => { setStoredFilter(initialFilter); }, [initialFilter, setStoredFilter]);
+  const setFilter = useCallback((next: ProblemFilter) => {
+    setStoredFilter(next);
+    router.replace(problemListHref(next, targetSetID));
+  }, [router, targetSetID, setStoredFilter]);
+  const returnTo = problemListHref(filter, targetSetID);
   const hasFilters = Boolean(filter.search || filter.level || filter.status || filter.tags?.length
     || filter.difficulty_min !== undefined || filter.difficulty_max !== undefined);
 
@@ -385,7 +387,7 @@ function ProblemsList() {
                 : problems.map((problem) => <tr key={problem.id}>
                   <td><input type="checkbox" aria-label={'选择题目：' + problem.title} checked={selectedIDs.has(problem.id)} disabled={savingSelection} onChange={event => selectProblem(problem, event.target.checked)} /></td>
                   <td className="min-w-[280px]">
-                    <Link href={`/problems/${problem.id}`} className="af-link font-medium">{problem.title}</Link>
+                    <Link href={problemDetailHref(problem.id, returnTo)} className="af-link font-medium">{problem.title}</Link>
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--dm)]">
                       <span className="font-mono">{problem.serial_number}</span>
                       {problem.tags.slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}
@@ -398,7 +400,7 @@ function ProblemsList() {
                   </td>
                   <td><span className={cn('forge-badge', statusBadgeColor(problem.status))}>{STATUS_LABELS[problem.status] ?? problem.status}</span></td>
                   <td className="text-sm text-[var(--dm)]">{formatDate(problem.created_at)}</td>
-                  <td><Link href={`/problems/${problem.id}`} className="af-link">查看</Link></td>
+                  <td><Link href={problemDetailHref(problem.id, returnTo)} className="af-link">查看</Link></td>
                 </tr>)}
             </tbody>
           </table>

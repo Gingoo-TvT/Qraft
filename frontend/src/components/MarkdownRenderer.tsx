@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import React from 'react';
+import { markdownImage } from '@/lib/markdown-image';
 
 // react-katex requires browser APIs, so we load it dynamically with SSR disabled.
 const InlineMath = dynamic(
@@ -21,7 +22,7 @@ function renderInline(text: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
   // Match inline math, links, inline code, bold, italic (in priority order).
   const regex =
-    /(\$\$[\s\S]*?\$\$)|(\$[^$]+\$)|(\\\([\s\S]*?\\\))|(\\\[[\s\S]*?\\\])|(\[[^\]]+\]\([^)]+\))|(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)/g;
+    /(!\[(?:\\.|[^\]\\])*\]\(\s*(?:<[^>\n]+>|(?:\\.|[^\s()]|\([^()]*\))+)(?:\s+(?:"[^"\n]*"|'[^'\n]*'))?\s*\))|(<img\b[^>]*>)|(\$\$[\s\S]*?\$\$)|(\$[^$]+\$)|(\\\([\s\S]*?\\\))|(\\\[[\s\S]*?\\\])|(\[[^\]]+\]\([^)]+\))|(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)/gi;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -31,6 +32,22 @@ function renderInline(text: string): React.ReactNode[] {
     }
 
     const token = match[0];
+    if (token.startsWith('![') || /^<img\b/i.test(token)) {
+      const picture = markdownImage(token);
+      if (picture) {
+        nodes.push(
+          // Imported statements can use arbitrary image hosts and relative paths.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={`image-${match.index}`} src={picture.src} alt={picture.alt} title={picture.title}
+            className="my-2 inline-block h-auto max-w-full rounded" loading="lazy" decoding="async" referrerPolicy="no-referrer" />,
+        );
+      } else {
+        nodes.push(token);
+      }
+      lastIndex = match.index + token.length;
+      continue;
+    }
+
 
     // Math may arrive using either dollar delimiters or the standard
     // TeX \\(...\\) / \\[...\\] delimiters. Handle these first so the ordinary

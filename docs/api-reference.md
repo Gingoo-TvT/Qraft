@@ -1768,3 +1768,10 @@ GET /problem-imports/:id 返回 status、items、counts、problem_set_id。逐�
 新的原题导入在 `PrepareImportedStatementActivity` 内调用已配置的模型提取内容，以固定四级标题和代码块生成题面。`import_source.oj_statement` 记录结构化内容与样例来源；`original` 和原始哈希保留原文，`final_sha256` 绑定实际入库题面。样例不可为空，原样例不得遗漏；新增样例需主解法和独立解法双重执行验证。已有工作流通过 Temporal 版本标记维持原历史路径。
 
 `GET /api/v1/workflows?size=20&status=completed&cursor=...` 使用游标分页。首请求省略 `cursor`，后续将 `meta.next_page_token` 原样传回 `cursor`；该字段缺失表示末页。切换状态或大小需清空游标。响应 `data` 仍为任务数组；不提供未计算的 `total`，客户端不得将缺失值解释为总数为零。各页继续执行任务所有者校验。
+
+
+### 测试包自定义编号
+
+题集测试包的 GET/POST 请求支持可选查询参数 `id_prefix` 与 `start_index`，例如 `?mode=testing&format=generic&id_prefix=Demo&start_index=50`。前缀允许 0–24 位 ASCII 字母、数字、下划线、连字符；起点默认为 1，范围 1–999999，整套题末尾也不能越界。仅传起点时前缀为空；两个参数均省略则继续使用默认稳定编号。自定义编程题号形如 `DemoP050`，混合题型沿用 X/T/P 类型标记并共享递增序号。
+
+参数同时适用于通用与 Hydro 测试包，校验失败返回 400。正式发布导出不接受这些参数。编号只影响本次下载：通用包的 Excel、测试点和数据目录同步使用 `import_code`，Hydro 使用 `hydro_pid`；`problem-set.json` 的可选 `numbering` 记录所用前缀与起点。题库记录与发布状态不变。

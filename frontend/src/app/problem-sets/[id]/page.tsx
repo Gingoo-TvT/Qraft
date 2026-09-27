@@ -44,6 +44,9 @@ export default function ProblemSetDetailPage() {
   const [savingConfig, setSavingConfig] = useState(false);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState<'generic' | 'hydro' | null>(null);
+  const [customNumbering, setCustomNumbering] = useState(false);
+  const [numberPrefix, setNumberPrefix] = useState('');
+  const [startIndex, setStartIndex] = useState(1);
   const [tagCatalog, setTagCatalog] = useState<{ activeTagsTree: unknown[] }>();
   const [tagFileName, setTagFileName] = useState('');
   const [tagCatalogError, setTagCatalogError] = useState('');
@@ -67,7 +70,7 @@ export default function ProblemSetDetailPage() {
   async function downloadTesting(format: 'generic' | 'hydro') {
     if (!set || downloading) return;
     setDownloading(format); setError('');
-    try { await downloadProblemSetTesting(id, format, set.code.replace(/[^a-zA-Z0-9_-]/g, '') + '-' + format + '.zip', format === 'generic' ? tagCatalog : undefined); }
+    try { await downloadProblemSetTesting(id, format, set.code.replace(/[^a-zA-Z0-9_-]/g, '') + '-' + format + '.zip', format === 'generic' ? tagCatalog : undefined, customNumbering ? { prefix: numberPrefix, start: startIndex } : undefined); }
     catch (cause) { setError(cause instanceof Error ? cause.message : '下载失败'); }
     finally { setDownloading(null); }
   }
@@ -310,6 +313,18 @@ export default function ProblemSetDetailPage() {
         </div>
       </div>
 <p className="text-sm text-[var(--dm)]">通用 ZIP 包含模板 Excel、datas 测试数据和题集清单，可保留全部题型；Hydro ZIP 可整包导入 Hydro 编程题库。两者供 OJ 测试，不改变题目的发布状态。{items.some(item => !item.problem_id || Boolean(item.quiz_id)) && ' 当前含客观题，请下载通用 ZIP；Hydro 不支持这些题型。'}</p>
+<details className="rounded-lg border border-[var(--dl)] p-3 text-sm">
+  <summary className="cursor-pointer font-medium">导出题目编号（可选）</summary>
+  <div className="mt-3 space-y-3">
+    <label className="flex items-center gap-2"><input type="checkbox" checked={customNumbering} disabled={Boolean(downloading)} onChange={event => setCustomNumbering(event.target.checked)} />自定义编号</label>
+    {customNumbering && <div className="flex flex-wrap items-end gap-4">
+      <label className="space-y-1">编号前缀<input className="forge-input" value={numberPrefix} maxLength={24} placeholder="例如 Atc" disabled={Boolean(downloading)} onChange={event => setNumberPrefix(event.target.value)} /></label>
+      <label className="space-y-1">起始编号<input className="forge-input w-32" type="number" min={1} max={999999} value={startIndex} disabled={Boolean(downloading)} onChange={event => setStartIndex(Number(event.target.value))} /></label>
+      <p>编程题编号示例：<code>{numberPrefix}P{String(startIndex).padStart(3, '0')}</code></p>
+    </div>}
+    <p className="text-[var(--dm)]">按题集顺序递增，至少保留三位数字；通用 ZIP 和 Hydro ZIP 均适用。仅改变这次下载的编号，题库原编号保留。导入同一 OJ 时请选择未占用的编号范围。</p>
+  </div>
+</details>
 <details className="rounded-lg border border-[var(--dl)] p-3 text-sm">
   <summary className="cursor-pointer font-medium">通用 ZIP 标签映射{tagFileName ? '：已选择标签目录' : '（可选）'}</summary>
   <div className="mt-3 space-y-2">

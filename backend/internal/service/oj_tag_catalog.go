@@ -22,7 +22,10 @@ type ojTagNode struct {
 	ParentID *string     `json:"parentId"`
 	Children []ojTagNode `json:"children"`
 }
-type TestingExportOptions struct{ TagCatalog *OJTagCatalog }
+type TestingExportOptions struct {
+	TagCatalog *OJTagCatalog
+	Numbering  *TestingExportNumbering
+}
 type TestingExportRequest struct {
 	TagCatalog json.RawMessage `json:"tag_catalog"`
 }

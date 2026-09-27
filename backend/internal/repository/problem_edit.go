@@ -551,7 +551,7 @@ func isProblemEditSerializationFailure(err error) bool {
 
 func cloneProblemForEdit(current *domain.Problem) *domain.Problem {
 	next := *current
-	next.Tags = append([]string(nil), current.Tags...)
+	next.Tags = append([]string{}, current.Tags...)
 	next.MetadataJSON = append(json.RawMessage(nil), current.MetadataJSON...)
 	return &next
 }
@@ -576,7 +576,7 @@ func applyProblemEditPatch(problem *domain.Problem, patch ProblemEditPatch) erro
 		problem.DetailedSolution = strings.TrimSpace(*patch.DetailedSolution)
 	}
 	if patch.Tags != nil {
-		problem.Tags = append([]string(nil), (*patch.Tags)...)
+		problem.Tags = append([]string{}, (*patch.Tags)...)
 	}
 	if patch.TimeLimit != nil {
 		problem.TimeLimit = *patch.TimeLimit

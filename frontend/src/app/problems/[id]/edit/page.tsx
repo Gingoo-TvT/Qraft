@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { problemListReturnTo, problemDetailHref } from '@/lib/problem-list-location';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -16,11 +17,9 @@ import { useProblem } from '@/hooks/useProblems';
 import { updateProblem } from '@/lib/api';
 import type { Problem, ProblemLevel, ProblemUpdateRequest } from '@/lib/types';
 import {
-  ALGORITHM_DIFFICULTY_MIN,
   DIFFICULTY_MAX,
   DIFFICULTY_MIN,
   DIFFICULTY_STEP,
-  SYNTAX_DIFFICULTY_MAX,
   getDifficultyLabel,
 } from '@/lib/constants';
 
@@ -64,6 +63,7 @@ function parseTags(value: string): string[] {
 export default function ProblemEditPage() {
   const params = useParams();
   const router = useRouter();
+  const returnTo = problemListReturnTo(useSearchParams().get('returnTo'));
   const id = params.id as string;
   const { problem, loading, error, refresh } = useProblem(id);
 
@@ -141,7 +141,7 @@ export default function ProblemEditPage() {
     try {
       const res = await updateProblem(problem.id, body);
       if (res.data?.id) {
-        router.push(`/problems/${res.data.id}`);
+        router.push(problemDetailHref(res.data.id, returnTo));
       } else {
         await refresh();
       }
@@ -150,7 +150,7 @@ export default function ProblemEditPage() {
     } finally {
       setSaving(false);
     }
-  }, [form, problem, refresh, router]);
+  }, [form, problem, refresh, router, returnTo]);
 
   if (error || (!loading && !problem)) {
     return (
@@ -158,7 +158,7 @@ export default function ProblemEditPage() {
         <PageHeader eyebrow="编程题库" title="编辑题目" />
         <div className="af-panel"><EmptyState icon={AlertTriangle} title={error ?? '题目未找到'}
           description="题目加载成功后才能开始编辑。"
-          action={<Link href="/problems" className="forge-btn-secondary"><ArrowLeft className="h-4 w-4" />返回列表</Link>} /></div>
+          action={<Link href={returnTo} className="forge-btn-secondary"><ArrowLeft className="h-4 w-4" />返回列表</Link>} /></div>
       </div>
     );
   }
@@ -169,16 +169,12 @@ export default function ProblemEditPage() {
     </div>;
   }
 
-  const minDifficulty =
-    form.level === 'syntax' ? DIFFICULTY_MIN : ALGORITHM_DIFFICULTY_MIN;
-  const maxDifficulty =
-    form.level === 'syntax' ? SYNTAX_DIFFICULTY_MAX : DIFFICULTY_MAX;
 
   return (
     <div className="af-page">
       <PageHeader eyebrow={`编程题库 · ${problem.serial_number}`} title="编辑题目" description="编辑题面、题解和题目属性，保存后更新当前题目。"
         actions={<>
-          <Link href={`/problems/${problem.id}`} className="forge-btn-secondary"><ArrowLeft className="h-4 w-4" />返回题目详情</Link>
+          <Link href={problemDetailHref(problem.id, returnTo)} className="forge-btn-secondary"><ArrowLeft className="h-4 w-4" />返回题目详情</Link>
           <button type="button" className="forge-btn-primary" onClick={handleSave} disabled={saving}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{saving ? '保存中…' : '保存'}
           </button>
@@ -225,7 +221,7 @@ export default function ProblemEditPage() {
               </label>
               <label className="block space-y-3">
                 <span className="flex items-center justify-between gap-3 text-sm"><span className="font-medium">难度</span><span className="text-[var(--dm)]">{form.difficulty} ({getDifficultyLabel(form.difficulty)})</span></span>
-                <input type="range" min={minDifficulty} max={maxDifficulty} step={DIFFICULTY_STEP} value={form.difficulty}
+                <input type="range" min={DIFFICULTY_MIN} max={DIFFICULTY_MAX} step={DIFFICULTY_STEP} value={form.difficulty}
                   onChange={(event) => updateField('difficulty', Number(event.target.value))} className="w-full accent-[var(--da)]" />
               </label>
               <label className="block space-y-2">

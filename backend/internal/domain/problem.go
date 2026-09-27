@@ -126,8 +126,10 @@ func (p *Problem) Validate() error {
 		return fmt.Errorf("invalid problem status: %q", p.Status)
 	}
 
-	// Difficulty range check.
-	minD, maxD := DifficultyRange(p.Level)
+	// Stored and imported ratings are independent of the authoring category.
+	// DifficultyRange is a generation target, not a restriction on editing
+	// existing problems (an algorithm problem can legitimately be rated 1000).
+	const minD, maxD = 800, 3500
 	if p.Difficulty < minD || p.Difficulty > maxD {
 		return fmt.Errorf("difficulty %d out of range [%d, %d] for level %q",
 			p.Difficulty, minD, maxD, p.Level)

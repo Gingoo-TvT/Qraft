@@ -25,13 +25,14 @@ type testingProblemLoader interface {
 }
 
 type testingSetManifest struct {
-	Format     string           `json:"format"`
-	Mode       string           `json:"mode"`
-	Code       string           `json:"code"`
-	Title      string           `json:"title"`
-	TotalScore int              `json:"total_score"`
-	Warning    string           `json:"warning"`
-	Items      []testingSetItem `json:"items"`
+	Numbering  *TestingExportNumbering `json:"numbering,omitempty"`
+	Format     string                  `json:"format"`
+	Mode       string                  `json:"mode"`
+	Code       string                  `json:"code"`
+	Title      string                  `json:"title"`
+	TotalScore int                     `json:"total_score"`
+	Warning    string                  `json:"warning"`
+	Items      []testingSetItem        `json:"items"`
 }
 type testingSetItem struct {
 	problemSetExportItem
@@ -121,6 +122,10 @@ func buildProblemSetTestingPackage(ctx context.Context, set *domain.ProblemSet, 
 	if len(options) > 0 {
 		exportOptions = options[0]
 	}
+	if err := exportOptions.Numbering.validate(len(set.Items)); err != nil {
+		return nil, err
+	}
+	manifest.Numbering = exportOptions.Numbering
 	if format == ProblemSetTestingGeneric {
 		manifest.Format = "qraft.problem-set.testing.generic.v2"
 	}
@@ -156,6 +161,9 @@ func buildProblemSetTestingPackage(ctx context.Context, set *domain.ProblemSet, 
 				// Stable, distinct Hydro IDs preserve set positions even when
 				// the same source problem occurs twice in the set.
 				entry.HydroPID = fmt.Sprintf("Q%sP%03d", sha256Hex([]byte(set.ID.String() + ":" + set.Code))[:8], index+1)
+				if exportOptions.Numbering != nil {
+					entry.HydroPID = exportOptions.Numbering.code(index, domain.QuizTypeProgramming)
+				}
 				problemCopy := *req.Problem
 				var metadata map[string]interface{}
 				if err := json.Unmarshal(problemCopy.MetadataJSON, &metadata); err != nil {
@@ -181,6 +189,9 @@ func buildProblemSetTestingPackage(ctx context.Context, set *domain.ProblemSet, 
 				}
 			} else {
 				entry.ImportCode = testingOJCode(set, index, domain.QuizTypeProgramming)
+				if exportOptions.Numbering != nil {
+					entry.ImportCode = exportOptions.Numbering.code(index, domain.QuizTypeProgramming)
+				}
 				entry.DataDirectory = "datas/" + entry.ImportCode
 				subtasks, _, buildErr := buildHydroSubtasksForTestManifestV2(assets.request.Problem.ID, assets.cases, assets.request.TestManifestV2)
 				if buildErr != nil {
@@ -205,6 +216,9 @@ func buildProblemSetTestingPackage(ctx context.Context, set *domain.ProblemSet, 
 			}
 			q.KnowledgePointIDs = nil
 			entry.ImportCode = testingOJCode(set, index, q.Type)
+			if exportOptions.Numbering != nil {
+				entry.ImportCode = exportOptions.Numbering.code(index, q.Type)
+			}
 			entry.Tags = q.Tags
 			entry.SourceCode = q.Code
 			workbookRows = append(workbookRows, ojTestingRow{Code: entry.ImportCode, Quiz: &q})

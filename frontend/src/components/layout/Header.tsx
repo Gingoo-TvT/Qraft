@@ -7,6 +7,7 @@ import { ChevronRight, Menu, Search } from 'lucide-react';
 import WebThemePicker from './WebThemePicker';
 import type { WebAppearance } from '@/lib/web-appearance';
 import { hasQuestionSearch, questionSearchHref } from '@/lib/question-search-route';
+import { problemListReturnTo } from '@/lib/problem-list-location';
 
 export type ThemePreference = WebAppearance['mode'];
 const LABELS: Record<string,string> = {
@@ -43,6 +44,16 @@ function QuestionSearch({ pathname }: { pathname: string }) {
   <span className="af-topbar-divider" />
  </>;
 }
+function BreadcrumbLink({ href, children }: { href: string; children: ReactNode }) {
+ const params = useSearchParams();
+ const returnTo = params.get('returnTo');
+ let destination = href;
+ if (returnTo && href.startsWith('/problems')) {
+  const list = problemListReturnTo(returnTo);
+  destination = href === '/problems' ? list : href + '?returnTo=' + encodeURIComponent(list);
+ }
+ return <Link href={destination}>{children}</Link>;
+}
 export default function Header({ appearance, onAppearanceChange, storageError, onMenu, menuOpen, themePicker, actions }: {
  appearance: WebAppearance; onAppearanceChange: (patch: Partial<WebAppearance>) => void; storageError: boolean; onMenu: () => void; menuOpen: boolean; themePicker?:ReactNode; actions?:ReactNode;
 }) {
@@ -62,7 +73,7 @@ export default function Header({ appearance, onAppearanceChange, storageError, o
   <button type="button" className="af-icon-button af-mobile-menu" aria-label="打开导航" aria-controls="workspace-sidebar" aria-expanded={menuOpen} onClick={onMenu}><Menu size={20} /></button>
   <nav aria-label="当前位置" className="af-breadcrumb">{crumbs.map((crumb,index) =>
    <span key={crumb.href}>{index > 0 && <ChevronRight size={14} aria-hidden="true" />}
-    {index === crumbs.length - 1 ? <strong aria-current="page">{crumb.label}</strong> : crumb.href === '/desktop' ? <span>{crumb.label}</span> : <Link href={crumb.href}>{crumb.label}</Link>}
+    {index === crumbs.length - 1 ? <strong aria-current="page">{crumb.label}</strong> : crumb.href === '/desktop' ? <span>{crumb.label}</span> : <Suspense fallback={<Link href={crumb.href}>{crumb.label}</Link>}><BreadcrumbLink href={crumb.href}>{crumb.label}</BreadcrumbLink></Suspense>}
    </span>)}</nav>
   <div className="af-topbar-actions">
    {hasQuestionSearch(pathname) && <Suspense fallback={null}><QuestionSearch pathname={pathname} /></Suspense>}
