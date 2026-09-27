@@ -44,6 +44,9 @@ func setWorkflowID(ref domain.ProblemSetGenerationRef) string {
 	return "problem-set-generation-" + ref.SetID.String() + "-" + ref.RunID
 }
 func (s *ProblemSetGenerationService) Start(ctx context.Context, id uuid.UUID) (*domain.ProblemSetGenerationState, error) {
+	if err := s.sets.requireSetAccess(ctx, id, true); err != nil {
+		return nil, err
+	}
 	if s == nil || s.temporal == nil || s.resolve == nil {
 		return nil, fmt.Errorf("problem-set generation is unavailable")
 	}
@@ -88,6 +91,9 @@ func (s *ProblemSetGenerationService) Start(ctx context.Context, id uuid.UUID) (
 	return next, nil
 }
 func (s *ProblemSetGenerationService) Status(ctx context.Context, id uuid.UUID) (*domain.ProblemSetGenerationState, error) {
+	if err := s.sets.requireSetAccess(ctx, id, true); err != nil {
+		return nil, err
+	}
 	set, err := s.sets.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -133,6 +139,9 @@ func (s *ProblemSetGenerationService) Status(ctx context.Context, id uuid.UUID) 
 	return state, nil
 }
 func (s *ProblemSetGenerationService) Cancel(ctx context.Context, id uuid.UUID) error {
+	if err := s.sets.requireSetAccess(ctx, id, true); err != nil {
+		return err
+	}
 	set, err := s.sets.repo.GetByID(ctx, id)
 	if err != nil {
 		return err

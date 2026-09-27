@@ -29,8 +29,13 @@ def render(root):
             if key.startswith("ANTHROPIC_"):
                 env[key] = ""
         if name in ("api", "worker"):
+            # Native local instances are deliberately trusted loopback workspaces.
+            # Never carry shared-service bootstrap or cookie settings into the
+            # desktop runtime; the service must opt into those separately.
             env["APP_DEV_MODE"] = "true"
             env["APP_ENV"] = "development"
+            for key in ("QRAFT_AUTH_BOOTSTRAP_TOKEN", "QRAFT_AUTH_SECURE_COOKIE", "QRAFT_ALLOWED_ORIGINS"):
+                env.pop(key, None)
             env["ALGOFORGE_EMBEDDING_ENABLED"] = "${ALGOFORGE_EMBEDDING_ENABLED:-false}"
             env["ALGOFORGE_EMBEDDING_API_KEY"] = ""
             env["ALGOFORGE_EMBEDDING_UI_ALLOW_PUBLIC"] = "true" # Outbound API configuration; the UI stays loopback-only.

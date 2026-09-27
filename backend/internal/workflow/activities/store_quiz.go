@@ -15,6 +15,14 @@ func (a *Activities) StoreQuizActivity(ctx context.Context, in QuizStoreInput) (
 	if err := validateActivityPayloadVersion(in.PayloadVersion); err != nil {
 		return nil, err
 	}
+	// Resolve child ownership while Temporal still retains its parent chain.
+	// Use trusted activity metadata rather than the caller-supplied operation key,
+	// and do this before both a new write and an idempotent cached result.
+	if a != nil && a.deps != nil && a.deps.PersistWorkflowOwner != nil {
+		if err := a.persistWorkflowOwner(ctx, workflowExecutionID(ctx)); err != nil {
+			return nil, err
+		}
+	}
 	if in.PayloadVersion == ActivityPayloadVersion {
 		return a.storeQuizV1(ctx, in)
 	}

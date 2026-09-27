@@ -1,4 +1,5 @@
 import { APIError, getApiBaseUrl } from './api';
+import { serviceFetch } from './auth-session';
 import { desktopRuntime } from './desktop-runtime';
 import { reviewRequestInit } from '@/components/rating/review-session';
 import type { Anchor, Assessment, Calibration, Decision, DecisionInput, FeedbackInput, Invitation, InvitationRequest, IssuedInvitation, ReviewTask, Workspace } from './rating-types';
@@ -19,15 +20,10 @@ async function request<T>(path: string, method = 'GET', payload?: unknown, publi
  if (publicToken !== undefined) init = reviewRequestInit(publicToken, payload);
  else {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (typeof window !== 'undefined') {
-   let token: string | null = null;
-   try { token = window.localStorage.getItem('algoforge_token'); } catch { /* Server will explain missing authorization. */ }
-   if (token) headers.Authorization = 'Bearer ' + token;
-  }
   init = { method, headers, cache: 'no-store', ...(payload === undefined ? {} : { body: JSON.stringify(payload) }) };
  }
  let response: Response;
- try { response = await fetch(getApiBaseUrl() + path, init); } catch { throw new Error('无法连接题目评估服务。请检查连接后重试。'); }
+ try { response = await serviceFetch(getApiBaseUrl() + path, init, publicToken !== undefined); } catch { throw new Error('无法连接题目评估服务。请检查连接后重试。'); }
  const body = await response.json().catch(() => null);
  if (!response.ok || body?.success === false) throw new APIError(body?.error?.message ?? '请求失败（' + response.status + '）', body?.error?.code ?? 'RATING_ERROR', response.status);
  return body?.data as T;

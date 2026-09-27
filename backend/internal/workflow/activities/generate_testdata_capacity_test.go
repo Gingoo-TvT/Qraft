@@ -16,12 +16,8 @@ func TestGeneratedAndCustomInputCapacityBoundariesFailClosed(t *testing.T) {
 		t.Fatal("per-case limit +1 was accepted")
 	}
 
-	exactBatch := []TestCaseData{
-		{Input: exactCase},
-		{Input: exactCase},
-		{Input: exactCase},
-		{Input: exactCase},
-	}
+	quarter := strings.Repeat("x", generatorMaxTotalOutputBytes/4)
+	exactBatch := []TestCaseData{{Input: quarter}, {Input: quarter}, {Input: quarter}, {Input: quarter}}
 	if err := validateGeneratedTestInputs(exactBatch); err != nil {
 		t.Fatalf("exact batch limit rejected: %v", err)
 	}

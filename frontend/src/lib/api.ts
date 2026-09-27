@@ -2,6 +2,7 @@
 // Qraft - API Client
 // ============================================================================
 
+import { serviceFetch, SESSION_EXPIRED } from './auth-session';
 import { desktopRuntime } from './desktop-runtime';
 
 import type {
@@ -9,6 +10,7 @@ import type {
   ActiveEmbeddingModelStatus,
   EmbeddingModelVersion,
   EmbeddingRuntimeSettings,
+  SavedEmbeddingRuntimeSettings,
   AnnotationNext,
   AnnotationSubmitRequest,
   AnnotationSubmitResult,
@@ -96,27 +98,6 @@ function apiUrl(path: string): string {
   return `${base}${normalizedPath}`;
 }
 
-function appendQuery(url: string, params: URLSearchParams): string {
-  const query = params.toString();
-  if (!query) return url;
-  return `${url}${url.includes('?') ? '&' : '?'}${query}`;
-}
-
-function getAuthHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('algoforge_token');
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-  }
-
-  return headers;
-}
-
 class APIError extends Error {
   code: string;
   status: number;
@@ -137,10 +118,10 @@ async function request<T>(
 
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await serviceFetch(url, {
       ...options,
       headers: {
-        ...getAuthHeaders(),
+        'Content-Type': 'application/json',
         ...(options.headers as Record<string, string>),
       },
     });
@@ -185,7 +166,7 @@ async function anonymousRequest<T>(
 ): Promise<APIResponse<T>> {
   let response: Response;
   try {
-    response = await fetch(apiUrl(path), {
+    response = await serviceFetch(apiUrl(path), {
       ...options,
       credentials: 'omit',
       cache: 'no-store',
@@ -195,7 +176,7 @@ async function anonymousRequest<T>(
         ...(options.body ? { 'Content-Type': 'application/json' } : {}),
         ...(options.headers as Record<string, string>),
       },
-    });
+    }, true);
   } catch {
     throw new APIError(
       `无法连接 API 服务（${getApiBaseUrl()}）`,
@@ -263,7 +244,7 @@ export async function getApiHealth(
 ): Promise<{ status: string }> {
   let response: Response;
   try {
-    response = await fetch(apiUrl('/health'), {
+    response = await serviceFetch(apiUrl('/health'), {
       signal,
       cache: 'no-store',
       headers: {
@@ -297,7 +278,7 @@ export async function getIntegrationCapabilities(
 ): Promise<IntegrationCapabilities> {
   let response: Response;
   try {
-    response = await fetch(apiUrl('/api/v1/integration/capabilities'), {
+    response = await serviceFetch(apiUrl('/api/v1/integration/capabilities'), {
       signal,
       cache: 'no-store',
       headers: {
@@ -450,14 +431,9 @@ export async function validateHydroPackage(
 ): Promise<APIResponse<HydroValidationReport>> {
   const fd = new FormData();
   fd.append('file', file);
-  const token =
-    typeof window !== 'undefined'
-      ? localStorage.getItem('algoforge_token')
-      : null;
-  const res = await fetch(apiUrl('/api/v1/problems/hydro/validate'), {
+  const res = await serviceFetch(apiUrl('/api/v1/problems/hydro/validate'), {
     method: 'POST',
     body: fd,
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   const body: APIResponse<HydroValidationReport> = await res.json();
   if (!res.ok || !body.success) {
@@ -543,7 +519,7 @@ export async function listTagsByLevel(
 // ---------------------------------------------------------------------------
 
 export async function listWorkflows(
-  params?: { page?: number; size?: number; status?: string },
+  params?: { page?: number; size?: number; status?: string; cursor?: string },
 ): Promise<APIResponse<WorkflowState[]>> {
   const qs = params
     ? buildQueryString(params as Record<string, unknown>)
@@ -612,19 +588,15 @@ export function subscribeWorkflowEvents(
   onEvent: (event: MessageEvent) => void,
   onError?: (event: Event) => void,
 ): EventSource {
-  const token =
-    typeof window !== 'undefined'
-      ? localStorage.getItem('algoforge_token')
-      : null;
 
-  let url = apiUrl(
+  const url = apiUrl(
     `/api/v1/workflows/${encodeURIComponent(workflowId)}/events`,
   );
-  if (token) {
-    url = appendQuery(url, new URLSearchParams({ token }));
-  }
-
-  const eventSource = new EventSource(url);
+  const eventSource = new EventSource(url, { withCredentials: true });
+  const close = eventSource.close.bind(eventSource);
+  const stop = () => { close(); window.removeEventListener(SESSION_EXPIRED, stop); };
+  eventSource.close = stop;
+  window.addEventListener(SESSION_EXPIRED, stop);
   eventSource.onmessage = onEvent;
   if (onError) {
     eventSource.onerror = onError;
@@ -690,6 +662,10 @@ export async function listEmbeddingModels(): Promise<APIResponse<EmbeddingModelV
 
 export async function getEmbeddingRuntimeSettings(): Promise<APIResponse<EmbeddingRuntimeSettings>> {
   return request<EmbeddingRuntimeSettings>('/api/v1/embedding/runtime-settings');
+}
+
+export async function getSavedEmbeddingRuntimeSettings(): Promise<APIResponse<SavedEmbeddingRuntimeSettings>> {
+  return request<SavedEmbeddingRuntimeSettings>('/api/v1/embedding/saved-runtime-settings');
 }
 
 export async function testLocalEmbeddingEndpoint(
@@ -787,14 +763,9 @@ export async function importQuizzes(
     `/api/v1/quizzes/import?` +
     `subject=${encodeURIComponent(subject)}` +
     `&on_conflict=${encodeURIComponent(onConflict)}`;
-  const token =
-    typeof window !== 'undefined'
-      ? localStorage.getItem('algoforge_token')
-      : null;
-  const res = await fetch(apiUrl(url), {
+  const res = await serviceFetch(apiUrl(url), {
     method: 'POST',
     body: fd,
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   const body: APIResponse<ImportReport> = await res.json();
   if (!res.ok || !body.success) {
@@ -882,6 +853,10 @@ export async function addProblemSetItem(
   });
 }
 
+export async function addProblemSetItems(id: string, items: ProblemSetAddItemRequest[]): Promise<APIResponse<ProblemSet>> {
+  return request<ProblemSet>(`/api/v1/problem-sets/${id}/items/batch`, { method: 'POST', body: JSON.stringify({ items }) });
+}
+
 export async function removeProblemSetItem(
   setId: string,
   itemId: string,
@@ -909,6 +884,10 @@ export async function generateProblemSetPrompt(
 export function exportProblemSetURL(id: string, allowReuse = false): string {
   const suffix = allowReuse ? '?allow_reuse=true' : '';
   return apiUrl(`/api/v1/problem-sets/${id}/export.zip${suffix}`);
+}
+
+export function exportProblemSetTestingURL(id: string, format: 'generic' | 'hydro'): string {
+  return apiUrl('/api/v1/problem-sets/' + encodeURIComponent(id) + '/export.zip?mode=testing&format=' + format);
 }
 
 // ---------------------------------------------------------------------------
@@ -941,4 +920,8 @@ export async function searchQuestions(
     '/api/v1/questions/search' + buildQueryString(filter as Record<string, unknown>),
     { signal },
   );
+}
+
+export async function getGenerationReadiness(): Promise<APIResponse<{ ready: boolean; message: string }>> {
+ return request('/api/v1/settings/generation-readiness');
 }

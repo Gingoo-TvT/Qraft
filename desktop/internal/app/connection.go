@@ -16,6 +16,7 @@ type Connection struct {
 	SchemaVersion  string `json:"schema_version"`
 	ProblemSets    bool   `json:"problem_sets"`
 	Ready          bool   `json:"ready"`
+	AuthRequired   bool   `json:"auth_required,omitempty"`
 }
 
 func CheckConnection(ctx context.Context, raw string) (Connection, error) {
@@ -39,7 +40,7 @@ func CheckConnection(ctx context.Context, raw string) (Connection, error) {
 	}
 	defer res.Body.Close()
 	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
-		return result, fmt.Errorf("服务需要身份验证，请提供允许该客户端访问 API 的服务地址")
+		return checkSharedAuth(ctx, client, base, result)
 	}
 	if res.StatusCode >= 300 && res.StatusCode < 400 {
 		return result, fmt.Errorf("服务返回重定向，请填写最终服务地址；网页登录网关需要另外提供可访问的 API 地址")
@@ -63,5 +64,30 @@ func CheckConnection(ctx context.Context, raw string) (Connection, error) {
 	}
 	result.ReleaseVersion, result.SchemaVersion = payload.ReleaseVersion, payload.SchemaVersion
 	result.ProblemSets, result.Ready = payload.ProblemSets.Enabled, true
+	return result, nil
+}
+
+// Shared account discovery is public and carries no credentials or user data.
+func checkSharedAuth(ctx context.Context, client *http.Client, base string, result Connection) (Connection, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/v1/auth/session", nil)
+	if err != nil {
+		return result, err
+	}
+	req.Header.Set("Accept", "application/json")
+	res, err := client.Do(req)
+	if err != nil {
+		return result, fmt.Errorf("无法检查工作区登录方式: %w", err)
+	}
+	defer res.Body.Close()
+	var payload struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Mode string `json:"mode"`
+		} `json:"data"`
+	}
+	if res.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&payload) != nil || !payload.Success || payload.Data.Mode != "shared" {
+		return result, fmt.Errorf("服务需要外部身份验证；请使用支持 Qraft 内置账号登录的服务地址")
+	}
+	result.Ready, result.AuthRequired = true, true
 	return result, nil
 }

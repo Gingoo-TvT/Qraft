@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/Gingoo-TvT/Qraft/backend/internal/access"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -23,9 +24,11 @@ func (r *ProblemSetRepository) ListAssemblyCandidates(ctx context.Context, filte
 	for i, typ := range types {
 		typeNames[i] = string(typ)
 	}
+	identity, hasIdentity := access.FromContext(ctx)
+	member := hasIdentity && !identity.IsAdmin()
 	rows, err := r.db.Query(ctx, `
  WITH recent_sets AS (
-  SELECT id FROM problem_sets ORDER BY created_at DESC, id DESC LIMIT $7
+  SELECT id FROM problem_sets WHERE (NOT $9 OR visibility='public' OR owner_user_id=$10) ORDER BY created_at DESC, id DESC LIMIT $7
  ), recent AS (
   SELECT p.id, 'programming' AS type,
    md5(regexp_replace(trim(p.statement), '[[:space:]]+', ' ', 'g')) AS fingerprint
@@ -52,7 +55,7 @@ func (r *ProblemSetRepository) ListAssemblyCandidates(ctx context.Context, filte
    md5(regexp_replace(trim(q.statement), '[[:space:]]+', ' ', 'g') || COALESCE(q.options::text, '[]')),
    q.statement
   FROM quiz_problems q
-  WHERE q.type IN ('choice','fill_blank','judge') AND q.type=ANY($1::text[])
+  WHERE (NOT $9 OR q.visibility='public') AND q.type IN ('choice','fill_blank','judge') AND q.type=ANY($1::text[])
    AND btrim(q.statement) <> '' AND cardinality(q.answers)>0
    AND ($6='' OR q.difficulty=$6)
  )
@@ -61,7 +64,7 @@ func (r *ProblemSetRepository) ListAssemblyCandidates(ctx context.Context, filte
  WHERE (cardinality($2::text[])=0 OR EXISTS (SELECT 1 FROM unnest(c.tags) tag WHERE lower(trim(tag))=ANY($2::text[])))
   AND ($3='' OR strpos(lower(c.title || ' ' || c.statement),lower($3))>0)
   AND NOT EXISTS (SELECT 1 FROM recent r WHERE r.type=c.type AND (r.id=c.id OR r.fingerprint=c.fingerprint))
- ORDER BY c.type,c.id`, typeNames, filter.Tags, filter.Keyword, filter.MinDifficulty, filter.MaxDifficulty, filter.QuizDifficulty, filter.ExcludeRecentSets, filter.RatingBasis)
+ ORDER BY c.type,c.id`, typeNames, filter.Tags, filter.Keyword, filter.MinDifficulty, filter.MaxDifficulty, filter.QuizDifficulty, filter.ExcludeRecentSets, filter.RatingBasis, member, identity.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("listing assembly candidates: %w", err)
 	}
@@ -115,6 +118,8 @@ func (r *ProblemSetRepository) ListAssemblyCandidates(ctx context.Context, filte
 // Source revisions are locked before inserting anything. A stale preview or an
 // insertion failure therefore cannot leave a half-created paper.
 func (r *ProblemSetRepository) CreateAssembled(ctx context.Context, set *domain.ProblemSet, refs []domain.ProblemSetAssemblyRef) error {
+	identity, hasIdentity := access.FromContext(ctx)
+	member := hasIdentity && !identity.IsAdmin()
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -136,7 +141,7 @@ func (r *ProblemSetRepository) CreateAssembled(ctx context.Context, set *domain.
 			err = tx.QueryRow(ctx, `SELECT p.id FROM problems p WHERE p.id=$1 AND p.updated_at=$2 AND p.status='published'
     AND NOT EXISTS (SELECT 1 FROM problem_quarantine_records q WHERE q.problem_id=p.id) FOR SHARE OF p`, ref.ID, ref.UpdatedAt).Scan(&id)
 		} else {
-			err = tx.QueryRow(ctx, `SELECT id FROM quiz_problems WHERE id=$1 AND updated_at=$2 AND type=$3 FOR SHARE`, ref.ID, ref.UpdatedAt, ref.Type).Scan(&id)
+			err = tx.QueryRow(ctx, `SELECT id FROM quiz_problems WHERE id=$1 AND updated_at=$2 AND type=$3 AND (NOT $4 OR visibility='public') FOR SHARE`, ref.ID, ref.UpdatedAt, ref.Type, member).Scan(&id)
 		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrProblemSetAssemblyChanged

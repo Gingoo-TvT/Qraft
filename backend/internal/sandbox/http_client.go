@@ -246,7 +246,35 @@ func validateExecuteAuditConsistency(executeAudit, compileAudit RemoteAuditMetad
 	return nil
 }
 
+// A sandbox_busy response is issued before request execution. Briefly wait for
+// capacity instead of regenerating a correct program after an incidental 429.
 func (c *HTTPClient) post(ctx context.Context, path string, requestBody, responseBody any) error {
+	waitBudget := 30 * time.Second
+	if c.httpClient.Timeout > 0 && c.httpClient.Timeout < waitBudget {
+		waitBudget = c.httpClient.Timeout
+	}
+	deadline := time.Now().Add(waitBudget)
+	for attempt := 0; ; attempt++ {
+		err := c.postOnce(ctx, path, requestBody, responseBody)
+		var remote *RemoteError
+		if !errors.As(err, &remote) || remote.StatusCode != 429 || remote.Code != "sandbox_busy" {
+			return err
+		}
+		delay := time.Duration(min(attempt+1, 4)) * 250 * time.Millisecond
+		if time.Now().Add(delay).After(deadline) {
+			return err
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func (c *HTTPClient) postOnce(ctx context.Context, path string, requestBody, responseBody any) error {
 	body, err := json.Marshal(requestBody)
 	if err != nil {
 		return fmt.Errorf("encoding sandbox request: %w", err)

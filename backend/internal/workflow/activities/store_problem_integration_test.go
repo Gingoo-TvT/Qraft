@@ -161,6 +161,22 @@ func TestStoreProblemIdempotencyAfterLedgerCompleteFailureIntegration(t *testing
 		t.Fatalf("ping integration database: %v", err)
 	}
 
+	// Fresh installations deliberately have no active embedding model. This
+	// test supplies its own synthetic identity instead of relying on instance data.
+	embeddingModelVersionID := uuid.New()
+	_, err := pool.Exec(ctx, `INSERT INTO embedding_model_versions
+		(id, model_id, provider, revision, weights_hash, dimensions, normalization, quantization, status)
+		VALUES ($1, 'integration-1536', 'integration-provider', $2, $3, 1536, 'none', 'float32', 'active')`,
+		embeddingModelVersionID, embeddingModelVersionID.String(), strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), "DELETE FROM embedding_model_versions WHERE id=$1", embeddingModelVersionID); err != nil {
+			t.Errorf("clean up synthetic model: %v", err)
+		}
+	})
+
 	operationKey := "integration/store-problem/" + uuid.NewString()
 	problemID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("algoforge:store-problem:"+operationKey))
 	effectKey, err := namedProviderEffectKey("store-problem-embedding", operationKey)
@@ -187,10 +203,6 @@ func TestStoreProblemIdempotencyAfterLedgerCompleteFailureIntegration(t *testing
 	ledger := &failFirstCompleteLedger{repository: operationRepository, failNext: true}
 	embedder := &fixedStoreEmbedder{}
 	vectorRepo := repository.NewVectorRepository(pool)
-	embeddingModelVersionID, err := vectorRepo.ActiveModelVersion(ctx, repository.EmbeddingKindStatement)
-	if err != nil {
-		t.Fatalf("resolve integration statement model version: %v", err)
-	}
 	activities := New(&Dependencies{
 		Embedding:               embedder,
 		EmbeddingEnabled:        true,

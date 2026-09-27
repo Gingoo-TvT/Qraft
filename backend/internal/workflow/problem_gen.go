@@ -447,6 +447,10 @@ func ProblemGenerationWorkflow(ctx workflow.Context, params domain.ProblemGenPar
 
 		if err := workflow.ExecuteActivity(llmCtx, "GenerateStatementActivity", statementInput).Get(ctx, &statementResult); err != nil {
 			state.RecordStep(failedStep(domain.StepGenerateStatement, stepStart, workflow.Now(ctx), err))
+			if activities.IsLLMAuthenticationError(err) {
+				markFailed(err.Error())
+				return state, err
+			}
 			statementRetryFeedback = newStatementRetryFeedbackV1(
 				stmtAttempt+1,
 				statementResult.Title,
@@ -474,6 +478,10 @@ func ProblemGenerationWorkflow(ctx workflow.Context, params domain.ProblemGenPar
 			)
 			if repairErr != nil {
 				state.RecordStep(failedStep(domain.StepGenerateStatement, stepStart, workflow.Now(ctx), repairErr))
+				if activities.IsLLMAuthenticationError(repairErr) {
+					markFailed(repairErr.Error())
+					return state, repairErr
+				}
 				statementRetryFeedback = newStatementRetryFeedbackV1(
 					stmtAttempt+1,
 					statementResult.Title,
@@ -507,6 +515,11 @@ func ProblemGenerationWorkflow(ctx workflow.Context, params domain.ProblemGenPar
 
 		var cleanedStatement activities.StatementResult
 		if err := workflow.ExecuteActivity(llmCtx, "CleanStatementActivity", statementResult, params).Get(ctx, &cleanedStatement); err != nil {
+			if activities.IsLLMAuthenticationError(err) {
+				state.RecordStep(failedStep(domain.StepGenerateStatement, stepStart, workflow.Now(ctx), err))
+				markFailed(err.Error())
+				return state, err
+			}
 			// The cleaner performs its own surface validation and can therefore
 			// reject a malformed candidate before it gets a chance to clean it.
 			// For new histories, turn that deterministic defect into the same
@@ -533,6 +546,11 @@ func ProblemGenerationWorkflow(ctx workflow.Context, params domain.ProblemGenPar
 						sourceArtifacts = appendArtifactRefsUnique(sourceArtifacts, repairedStatement.SourceArtifacts...)
 						logger.Info("statement quality repaired after cleaner rejection")
 					} else {
+						if activities.IsLLMAuthenticationError(repairErr) {
+							state.RecordStep(failedStep(domain.StepGenerateStatement, stepStart, workflow.Now(ctx), repairErr))
+							markFailed(repairErr.Error())
+							return state, repairErr
+						}
 						err = fmt.Errorf("statement cleaning and targeted repair failed: %w", repairErr)
 					}
 				}
@@ -578,6 +596,10 @@ func ProblemGenerationWorkflow(ctx workflow.Context, params domain.ProblemGenPar
 				)
 				if repairErr != nil {
 					state.RecordStep(failedStep(domain.StepGenerateStatement, stepStart, workflow.Now(ctx), repairErr))
+					if activities.IsLLMAuthenticationError(repairErr) {
+						markFailed(repairErr.Error())
+						return state, repairErr
+					}
 					statementRetryFeedback = newStatementRetryFeedbackV1(
 						stmtAttempt+1,
 						statementResult.Title,
@@ -695,6 +717,10 @@ func ProblemGenerationWorkflow(ctx workflow.Context, params domain.ProblemGenPar
 				statementResult.Statement, testDataParams.TestDataConfig, testDataParams,
 			).Get(ctx, &testDataResult); err != nil {
 				state.RecordStep(failedStep(domain.StepGenerateTestdata, stepStart, workflow.Now(ctx), err))
+				if activities.IsLLMAuthenticationError(err) {
+					markFailed(err.Error())
+					return state, err
+				}
 				testDataRetryFeedback = newStatementRetryFeedbackV1(
 					stmtAttempt+1,
 					statementResult.Title,
@@ -878,6 +904,10 @@ func ProblemGenerationWorkflow(ctx workflow.Context, params domain.ProblemGenPar
 			if solutionErr != nil {
 				err := solutionErr
 				state.RecordStep(failedStep(domain.StepGenerateSolution, stepStart, workflow.Now(ctx), err))
+				if activities.IsLLMAuthenticationError(err) {
+					markFailed(err.Error())
+					return state, err
+				}
 				logger.Warn("solution generation failed", "sol_attempt", solAttempt+1, "error", err)
 				abandonStatement := recordSolutionFailure(newSolutionRetryFeedbackV1(
 					stmtAttempt+1,
@@ -1146,6 +1176,11 @@ func ProblemGenerationWorkflow(ctx workflow.Context, params domain.ProblemGenPar
 			if err := workflow.ExecuteActivity(llmCtx, "AssessProblemFeasibilityActivity",
 				statementResult, validationResult.Mismatches, params,
 			).Get(ctx, &feasibility); err != nil {
+				if activities.IsLLMAuthenticationError(err) {
+					state.RecordStep(failedStep(domain.StepAssessFeasibility, stepStart, workflow.Now(ctx), err))
+					markFailed(err.Error())
+					return state, err
+				}
 				logger.Warn("feasibility assessment failed, treating problem as infeasible", "error", err)
 				feasibility.Feasible = false
 				feasibility.Reason = fmt.Sprintf("assessment error: %v", err)

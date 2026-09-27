@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Gingoo-TvT/Qraft/backend/internal/access"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/repository"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/workflow/activities"
@@ -17,6 +18,7 @@ import (
 
 // QuizService coordinates quiz CRUD and objective-question generation.
 type QuizService struct {
+	permissions        *WorkflowAccess
 	quizRepo           *repository.QuizRepository
 	kpRepo             *repository.KnowledgePointRepository
 	temporal           client.Client
@@ -43,6 +45,31 @@ func NewQuizService(
 	}
 }
 
+func (s *QuizService) SetWorkflowAccess(a *WorkflowAccess) { s.permissions = a }
+func (s *QuizService) authorizeQuiz(ctx context.Context, q *domain.QuizProblem) error {
+	if s.permissions == nil {
+		return nil
+	}
+	p, ok := access.FromContext(ctx)
+	if !ok {
+		return ErrNotFound
+	}
+	if p.IsAdmin() || q.Visibility == domain.QuizVisibilityPublic {
+		return nil
+	}
+	id, err := s.quizRepo.WorkflowID(ctx, q.ID)
+	if err != nil {
+		return err
+	}
+	allowed, err := s.permissions.CanAccess(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return ErrNotFound
+	}
+	return nil
+}
 func (s *QuizService) SetLLMRuntimeResolver(resolver QuizLLMRuntimeResolver) {
 	if s != nil {
 		s.llmRuntimeResolver = resolver
@@ -97,10 +124,18 @@ func (s *QuizService) Get(ctx context.Context, id uuid.UUID) (*domain.QuizProble
 		}
 		return nil, fmt.Errorf("getting quiz: %w", err)
 	}
+	if err := s.authorizeQuiz(ctx, q); err != nil {
+		return nil, err
+	}
 	return q, nil
 }
 
 func (s *QuizService) List(ctx context.Context, req QuizListRequest) (*QuizListResult, error) {
+	if s.permissions != nil {
+		if _, ok := access.FromContext(ctx); !ok {
+			return nil, ErrNotFound
+		}
+	}
 	page := req.Page
 	if page < 1 {
 		page = 1
@@ -150,6 +185,9 @@ func (s *QuizService) Delete(ctx context.Context, id uuid.UUID) error {
 }
 
 func (s *QuizService) Generate(ctx context.Context, req QuizGenerateRequest) (workflowID string, err error) {
+	if p, ok := access.FromContext(ctx); ok && !p.IsAdmin() {
+		req.Visibility = domain.QuizVisibilityPrivate
+	}
 	if err := validateQuizGenerateRequest(req); err != nil {
 		return "", err
 	}

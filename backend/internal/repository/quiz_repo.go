@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Gingoo-TvT/Qraft/backend/internal/access"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -25,6 +26,7 @@ func NewQuizRepository(db *pgxpool.Pool) *QuizRepository {
 }
 
 type QuizListFilter struct {
+	SharedOnly       bool
 	Type             *domain.QuizType
 	Subject          *string
 	Difficulty       *domain.QuizDifficulty
@@ -195,6 +197,20 @@ func (r *QuizRepository) CreateGeneratedBatch(
 			}
 		}
 	}
+	if workflowID, ok := strings.CutSuffix(operationKey, "/store-quiz/v1"); ok && workflowID != "" {
+		for _, quiz := range quizzes {
+			if _, err := tx.Exec(ctx, `INSERT INTO quiz_workflow_ownership(quiz_id,workflow_id) VALUES($1,$2) ON CONFLICT(quiz_id) DO NOTHING`, quiz.ID, workflowID); err != nil {
+				return err
+			}
+			var existing string
+			if err := tx.QueryRow(ctx, "SELECT workflow_id FROM quiz_workflow_ownership WHERE quiz_id=$1", quiz.ID).Scan(&existing); err != nil {
+				return err
+			}
+			if existing != workflowID {
+				return fmt.Errorf("quiz ownership conflict")
+			}
+		}
+	}
 	quizIDs := make([]string, 0, len(quizzes))
 	codes := make([]string, 0, len(quizzes))
 	for _, quiz := range quizzes {
@@ -285,6 +301,9 @@ func (r *QuizRepository) GetByCode(ctx context.Context, code string) (*domain.Qu
 }
 
 func (r *QuizRepository) List(ctx context.Context, filter QuizListFilter, page, pageSize int) ([]*domain.QuizProblem, int, error) {
+	if p, ok := access.FromContext(ctx); ok && !p.IsAdmin() {
+		filter.SharedOnly = true
+	}
 	where, args := buildQuizWhere(filter)
 	countQuery := "SELECT COUNT(DISTINCT qp.id) FROM quiz_problems qp" + where
 	var total int
@@ -457,6 +476,9 @@ func quizSelectBaseWithAlias() string {
 
 func buildQuizWhere(filter QuizListFilter) (string, []interface{}) {
 	var conditions []string
+	if filter.SharedOnly {
+		conditions = append(conditions, "qp.visibility = 'public'")
+	}
 	var args []interface{}
 	if filter.KnowledgePointID != nil {
 		conditions = append(conditions, "EXISTS (SELECT 1 FROM quiz_knowledge_points qkp WHERE qkp.quiz_id = qp.id AND qkp.knowledge_point_id = $"+fmt.Sprint(len(args)+1)+")")

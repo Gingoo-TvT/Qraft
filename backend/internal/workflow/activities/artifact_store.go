@@ -663,7 +663,7 @@ func (a *Activities) completeLLMWithProvenance(ctx context.Context, logicalSubst
 		return nil, nil, provenanceErr
 	}
 	if providerErr != nil {
-		return nil, ref, providerErr
+		return nil, ref, classifyLLMActivityError(providerErr)
 	}
 	return response, ref, nil
 }

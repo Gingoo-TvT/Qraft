@@ -46,6 +46,8 @@ type TestManifestV1 struct {
 	BruteSolutionSHA256      string                       `json:"brute_solution_sha256"`
 	MainSandbox              TestManifestSandboxIdentity  `json:"main_sandbox"`
 	BruteSandbox             TestManifestSandboxIdentity  `json:"brute_sandbox"`
+	MainBatches              []SandboxExecutionBatch      `json:"main_batches,omitempty"`
+	BruteBatches             []SandboxExecutionBatch      `json:"brute_batches,omitempty"`
 	Cases                    []TestManifestCase           `json:"cases"`
 }
 
@@ -121,6 +123,8 @@ func (a *Activities) BuildTestManifestActivity(ctx context.Context, input BuildT
 		BruteSolutionSHA256:      manifestSolutionSHA256(input.BruteSolution),
 		MainSandbox:              testManifestSandboxIdentity(input.MainOutput.Audit),
 		BruteSandbox:             testManifestSandboxIdentity(input.BruteOutput.Audit),
+		MainBatches:              append([]SandboxExecutionBatch(nil), input.MainOutput.Batches...),
+		BruteBatches:             append([]SandboxExecutionBatch(nil), input.BruteOutput.Batches...),
 		Cases:                    make([]TestManifestCase, 0, len(input.TestCases)),
 	}
 	for testIndex, testCase := range input.TestCases {
@@ -178,10 +182,10 @@ func (manifest TestManifestV1) Validate(expectedTests int) error {
 	if manifest.GeneratorSHA256 != "" && !isManifestSHA256(manifest.GeneratorSHA256) {
 		return fmt.Errorf("generator identity is not a canonical SHA-256 digest")
 	}
-	if err := validateTestManifestSandboxIdentity("main", manifest.MainSandbox); err != nil {
+	if err := validateTestManifestExecution("main", manifest.MainSandbox, manifest.MainBatches, manifest.TestCount); err != nil {
 		return err
 	}
-	if err := validateTestManifestSandboxIdentity("brute", manifest.BruteSandbox); err != nil {
+	if err := validateTestManifestExecution("brute", manifest.BruteSandbox, manifest.BruteBatches, manifest.DifferentialCheckedCount); err != nil {
 		return err
 	}
 	if manifest.TestCount != expectedTests || len(manifest.Cases) != expectedTests {
@@ -441,4 +445,32 @@ func manifestSHA256(data []byte) string {
 
 func testManifestQualityError(format string, args ...interface{}) error {
 	return temporal.NewNonRetryableApplicationError(fmt.Sprintf(format, args...), "QualityNotMet", nil)
+}
+
+// A batched result binds every case to its actual request receipt. It must not
+// present one batch's receipt as evidence for the combined execution.
+func validateTestManifestExecution(label string, single TestManifestSandboxIdentity, batches []SandboxExecutionBatch, count int) error {
+	if len(batches) == 0 {
+		return validateTestManifestSandboxIdentity(label, single)
+	}
+	if single != (TestManifestSandboxIdentity{}) {
+		return fmt.Errorf("%s batched execution also claims a single receipt", label)
+	}
+	next := 0
+	for i, b := range batches {
+		if b.FirstCase != next || b.CaseCount <= 0 || b.CaseCount > count-next {
+			return fmt.Errorf("%s batch %d has a missing, overlapping, or invalid case range", label, i)
+		}
+		if strings.TrimSpace(b.Audit.RunID) == "" {
+			return fmt.Errorf("%s batch %d has no run identity", label, i)
+		}
+		if err := validateTestManifestSandboxIdentity(fmt.Sprintf("%s batch %d", label, i), testManifestSandboxIdentity(b.Audit)); err != nil {
+			return err
+		}
+		next += b.CaseCount
+	}
+	if next != count {
+		return fmt.Errorf("%s batch receipts cover %d cases, want %d", label, next, count)
+	}
+	return nil
 }

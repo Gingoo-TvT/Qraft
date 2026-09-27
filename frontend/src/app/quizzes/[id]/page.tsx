@@ -1,5 +1,6 @@
 'use client';
 
+import { useAuth } from '@/components/auth/AuthProvider';
 import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -76,6 +77,7 @@ function QuizReadingView({ quiz }: { quiz: QuizProblem }) {
 }
 
 export default function QuizDetailPage() {
+  const { isAdmin } = useAuth();
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
@@ -125,16 +127,16 @@ export default function QuizDetailPage() {
         actions={<>
           <Link href="/quizzes" className="forge-btn-secondary"><ArrowLeft className="h-4 w-4" />返回客观题题库</Link>
           <RefreshButton onClick={refresh} loading={loading} />
-          <button className={editing ? 'forge-btn-secondary' : 'forge-btn-primary'} onClick={() => setEditing((prev) => !prev)}>
+          <button style={{ display: isAdmin ? undefined : 'none' }} className={editing ? 'forge-btn-secondary' : 'forge-btn-primary'} onClick={() => setEditing((prev) => !prev)}>
             {editing ? <X className="h-4 w-4" /> : <Edit3 className="h-4 w-4" />}{editing ? '取消编辑' : '编辑'}
           </button>
-          <button className="forge-btn-ghost text-danger-500" onClick={() => void handleDelete()} disabled={deleting}>
+          <button style={{ display: isAdmin ? undefined : 'none' }} className="forge-btn-ghost text-danger-500" onClick={() => void handleDelete()} disabled={deleting}>
             <Trash2 className="h-4 w-4" />删除
           </button>
         </>}
       />
       {(saveError || deleteError) && <div role="alert" className="rounded-lg border border-danger-400/30 bg-danger-50 p-4 text-sm text-danger-600 dark:bg-danger-500/10 dark:text-danger-400">{saveError || deleteError}</div>}
-      {editing ? <QuizForm quiz={quiz} onSubmit={handleSave} saving={saving} /> : <QuizReadingView quiz={quiz} />}
+      {isAdmin && editing ? <QuizForm quiz={quiz} onSubmit={handleSave} saving={saving} /> : <QuizReadingView quiz={quiz} />}
     </div>
   );
 }

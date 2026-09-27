@@ -200,6 +200,48 @@ func (a *Activities) ratingTestBytes(ctx context.Context, t rating.TestArtifact)
 	return input, output, nil
 }
 func ratingDecode(text string, target any) error {
+	// A single uncertainty is semantically the same as a one-item list.
+	// Normalize only this blind-solve field; keep the strict decoder below
+	// for all other field types, unknown keys, and trailing JSON values.
+	if _, blind := target.(*rating.BlindSolution); blind {
+		var object map[string]json.RawMessage
+		if json.Unmarshal([]byte(text), &object) == nil {
+			raw := object["uncertainties"]
+			if strings.HasPrefix(strings.TrimSpace(string(raw)), "\"") {
+				var value string
+				if err := json.Unmarshal(raw, &value); err != nil {
+					return err
+				}
+				values := []string{}
+				if strings.TrimSpace(value) != "" {
+					values = append(values, value)
+				}
+				object["uncertainties"], _ = json.Marshal(values)
+				normalized, err := json.Marshal(object)
+				if err != nil {
+					return err
+				}
+				text = string(normalized)
+			}
+		}
+	}
+	if _, analysis := target.(*rating.Analysis); analysis {
+		var object map[string]json.RawMessage
+		if json.Unmarshal([]byte(text), &object) == nil {
+			if raw, present := object["summary"]; present {
+				summary, err := ratingAnalysisSummaryText(raw)
+				if err != nil {
+					return err
+				}
+				object["summary"], _ = json.Marshal(summary)
+				normalized, err := json.Marshal(object)
+				if err != nil {
+					return err
+				}
+				text = string(normalized)
+			}
+		}
+	}
 	decoder := json.NewDecoder(strings.NewReader(strings.TrimSpace(text)))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
@@ -211,7 +253,7 @@ func ratingDecode(text string, target any) error {
 	return nil
 }
 func (a *Activities) ratingComplete(ctx context.Context, role, system string, payload any, runtime *domain.LLMRuntimeConfig, target any) (rating.ModelRun, rating.Evidence, error) {
-	req := &llm.Request{MaxTokens: 18000, System: system, Messages: []llm.Message{{Role: "user", Content: string(rating.StableJSON(payload))}}, PromptID: "rating_" + role, PromptVersion: rating.RuleVersion}
+	req := &llm.Request{MaxTokens: 18000, System: system, Messages: []llm.Message{{Role: "user", Content: string(rating.StableJSON(payload))}}, PromptID: "rating_" + role, PromptVersion: rating.ModelPromptVersion}
 	applyLLMRuntime(req, runtime)
 	stop := func() {}
 	if activity.IsActivity(ctx) {
@@ -390,4 +432,51 @@ func (a *Activities) RatingFinalizeActivity(ctx context.Context, in RatingFinali
 	}
 	rating.NormalizeReport(&report)
 	return a.deps.RatingStore.UpdateAssessment(ctx, in.AssessmentID, "completed", "completed", &report, "")
+}
+
+// Summary is display text only. Preserve every label/value when a model uses
+// a small flat object; do not reinterpret any of its claims as rating evidence.
+func ratingAnalysisSummaryText(raw json.RawMessage) (string, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if strings.HasPrefix(trimmed, `"`) {
+		var text string
+		err := json.Unmarshal(raw, &text)
+		return text, err
+	}
+	if !strings.HasPrefix(trimmed, "{") {
+		return "", fmt.Errorf("analysis summary must be text or a flat text object")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return "", err
+	}
+	if len(fields) == 0 || len(fields) > 8 {
+		return "", fmt.Errorf("analysis summary object requires one to eight text fields")
+	}
+	keys := make([]string, 0, len(fields))
+	for key := range fields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var builder strings.Builder
+	for i, key := range keys {
+		valueRaw := fields[key]
+		if !strings.HasPrefix(strings.TrimSpace(string(valueRaw)), `"`) {
+			return "", fmt.Errorf("analysis summary object values must be strings")
+		}
+		var value string
+		if err := json.Unmarshal(valueRaw, &value); err != nil {
+			return "", err
+		}
+		if i > 0 {
+			builder.WriteByte('\n')
+		}
+		builder.WriteString(key)
+		builder.WriteString(": ")
+		builder.WriteString(value)
+		if builder.Len() > 16<<10 {
+			return "", fmt.Errorf("analysis summary object exceeds 16 KiB text budget")
+		}
+	}
+	return builder.String(), nil
 }

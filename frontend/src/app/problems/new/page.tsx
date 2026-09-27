@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+import { useAuth } from '@/components/auth/AuthProvider';
+import GenerationReadiness from '@/components/auth/GenerationReadiness';
 import { FormSection, PageHeader } from '@/components/ui/Workspace';
 import ApiHealthBanner from '@/components/ApiHealthBanner';
 import { useGenerateProblem } from '@/hooks/useProblems';
@@ -56,15 +58,25 @@ function runtimeConfig(
     base_url: trimmedBaseUrl || undefined,
     provider: trimmedProvider || (trimmedBaseUrl ? 'anthropic-compatible' : undefined),
   };
-  if (trimmedKeyInput.startsWith('env:') || trimmedKeyInput.startsWith('runtime:')) {
-    config.api_key_ref = trimmedKeyInput;
-  } else if (trimmedKeyInput) {
+  if (trimmedKeyInput) {
     config.api_key = trimmedKeyInput;
   }
   return config;
 }
 
+const EMPTY_MODEL_OVERRIDES = {
+  statement_model: '',
+  statement_api_key: '',
+  statement_base_url: '',
+  statement_provider: '',
+  verification_model: '',
+  verification_api_key: '',
+  verification_base_url: '',
+  verification_provider: '',
+};
+
 export default function NewProblemPage() {
+  const { isAdmin } = useAuth();
   const router = useRouter();
   const { generate, loading, error, reset } = useGenerateProblem();
   const {
@@ -85,18 +97,18 @@ export default function NewProblemPage() {
       custom_prompt: '',
       similar_limit: 3,
       locale: 'zh',
-      statement_model: '',
-      statement_api_key: '',
-      statement_base_url: '',
-      statement_provider: '',
-      verification_model: '',
-      verification_api_key: '',
-      verification_base_url: '',
-      verification_provider: '',
+      ...EMPTY_MODEL_OVERRIDES,
     }),
     [selectedLevel],
   );
   const [formState, setFormState] = useState(initialFormState);
+  const [modelOverrideEnabled, setModelOverrideEnabled] = useState(false);
+
+  function toggleModelOverride(enabled: boolean) {
+    setModelOverrideEnabled(enabled);
+    setFormState((current) => ({ ...current, ...EMPTY_MODEL_OVERRIDES }));
+  }
+
 
   useEffect(() => {
     const brief = new URLSearchParams(window.location.search).get('brief');
@@ -139,6 +151,7 @@ export default function NewProblemPage() {
 
   const handleResetForm = useCallback(() => {
     reset();
+    setModelOverrideEnabled(false);
     setFormState({
       ...initialFormState,
       level: selectedLevel as ProblemLevel,
@@ -187,13 +200,13 @@ export default function NewProblemPage() {
       languages: [formState.language],
       similar_limit: formState.similar_limit,
       locale: formState.locale,
-      provider_config: providerConfig,
+      provider_config: isAdmin && modelOverrideEnabled ? providerConfig : undefined,
     };
     const result = await generate(params);
     if (result?.workflow_id) {
       router.push(`/workflows/${result.workflow_id}`);
     }
-  }, [formState, testDataConfig, generate, reset, router]);
+  }, [formState, testDataConfig, generate, reset, router, isAdmin, modelOverrideEnabled]);
 
   const minDifficulty =
     formState.level === 'syntax' ? DIFFICULTY_MIN : ALGORITHM_DIFFICULTY_MIN;
@@ -211,7 +224,7 @@ export default function NewProblemPage() {
         actions={<Link className="forge-btn-secondary" href="/problem-sets/new?format=programming">创建整场比赛</Link>}>
         <Link href="/problems" className="af-link inline-flex items-center gap-1"><ArrowLeft className="h-4 w-4" />返回编程题题库</Link>
       </PageHeader>
-      <ApiHealthBanner />
+      <ApiHealthBanner /><GenerationReadiness />
       {(error || tagsError) && <div role="alert" className="rounded-lg border border-danger-400/30 bg-danger-50 p-4 text-sm text-danger-600 dark:bg-danger-500/10 dark:text-danger-400">{error ?? `标签加载失败：${tagsError}`}</div>}
       <form className="af-form-layout" onSubmit={(event) => { event.preventDefault(); if (!submitDisabled) void handleSubmit(); }}>
         <div className="af-form-main">
@@ -236,21 +249,22 @@ export default function NewProblemPage() {
             </div>
             <div className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-[var(--dl)] bg-[var(--ds)] p-4"><div><h3 className="text-sm font-medium">测试数据配置</h3><p className="af-hint mt-1">{testDataConfig.time_limit || 2000} ms · {testDataConfig.memory_limit || 256} MB · {testDataConfig.sample_count ?? 2} 个样例<br />生成 10–20 个测试点，保留已配置的测试组与自定义样例。</p></div><Link className="af-link text-sm" href="/testdata-config">编辑测试配置</Link></div>
           </FormSection>
-          <details className="af-form-details">
+          {isAdmin && <details className="af-form-details">
             <summary><strong>模型覆盖与去重设置</strong><span className="af-hint">使用已保存配置；需要时仅覆盖本次调用</span></summary>
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><p className="af-hint">全部留空时使用默认模型。下面的值不会改写永久配置。</p><Link className="af-link text-sm" href="/settings">管理模型配置</Link></div>
-            <div className="grid gap-6 sm:grid-cols-2">{(['statement', 'verification'] as const).map((role) => <div key={role} className="space-y-3"><h3 className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="h-4 w-4 text-[var(--da)]" />{role === 'statement' ? '题面生成' : '独立验算'}</h3>{(['model', 'base_url', 'provider', 'api_key'] as const).map((field) => {
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><p className="af-hint">默认使用管理员已保存的模型。主动开启后，下面的值仅影响本次调用。</p><Link className="af-link text-sm" href="/settings">管理模型配置</Link></div>
+            <label className="mb-5 flex items-center gap-2 text-sm"><input id="model-override-enabled" name="qraft-enable-model-override" type="checkbox" checked={modelOverrideEnabled} onChange={(event) => toggleModelOverride(event.target.checked)} />启用本次模型覆盖</label>
+            {modelOverrideEnabled && <div className="grid gap-6 sm:grid-cols-2">{(['statement', 'verification'] as const).map((role) => <div key={role} className="space-y-3"><h3 className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="h-4 w-4 text-[var(--da)]" />{role === 'statement' ? '题面生成' : '独立验算'}</h3>{(['model', 'base_url', 'provider', 'api_key'] as const).map((field) => {
               const name = `${role}_${field}` as const;
               const label = { model: '模型', base_url: 'Base URL', provider: 'Provider', api_key: 'API Key' }[field];
-              return <label className="af-field" key={field}><span>{label}</span><input className="forge-input" type={field === 'api_key' ? 'password' : 'text'} inputMode={field === 'base_url' ? 'url' : undefined} autoComplete={field === 'api_key' ? 'off' : undefined} value={formState[name]} placeholder={field === 'model' ? '默认模型' : field === 'base_url' ? 'https://api.example.com' : field === 'provider' ? 'anthropic-compatible' : role === 'statement' ? 'sk-... 或 env:ALGOFORGE_STATEMENT_LLM_KEY' : 'sk-... 或 env:ALGOFORGE_REVIEW_LLM_KEY'} onChange={(event) => handleFieldChange(name, event.target.value)} /></label>;
-            })}</div>)}</div>
+              return <label className="af-field" key={field}><span>{label}</span><input className="forge-input" type={field === 'api_key' ? 'password' : 'text'} inputMode={field === 'base_url' ? 'url' : undefined} pattern={field === 'api_key' ? '(?!env:|runtime:).*' : undefined} title={field === 'api_key' ? '请输入实际 API Key，不支持 env: 或 runtime: 引用' : undefined} name={`qraft-override-${role}-${field}`} autoComplete={field === 'api_key' ? 'new-password' : 'off'} value={formState[name]} placeholder={field === 'model' ? '默认模型' : field === 'base_url' ? 'https://api.example.com' : field === 'provider' ? 'anthropic-compatible' : role === 'statement' ? 'API Key（不接受服务端环境引用）' : 'API Key（不接受服务端环境引用）'} onChange={(event) => handleFieldChange(name, event.target.value)} /></label>;
+            })}</div>)}</div>}
             <div className="mt-5 border-t border-[var(--dl)] pt-5"><label className="af-field"><span>向量去重：近邻数量上限</span><input className="forge-input max-w-48" type="number" min={0} max={20} value={formState.similar_limit} onChange={(event) => handleFieldChange('similar_limit', Math.max(0, Math.min(20, Number(event.target.value) || 0)))} /><span className="af-hint">填 0 关闭本次相似检测；范围 0–20。</span></label></div>
-          </details>
+          </details>}
         </div>
         <aside className="af-form-rail"><div className="af-summary">
           <div><p className="af-hint">本次创作</p><h2 className="mt-2 text-lg font-semibold">{formState.level === 'syntax' ? '语法题' : '算法题'}</h2></div>
           <div className="border-y border-[var(--dl)] py-5"><strong className="text-4xl font-semibold tabular-nums">{formState.difficulty}</strong><p className="af-hint mt-1">{getDifficultyLabel(formState.difficulty)} · 1 道编程题</p></div>
-          <dl className="space-y-3 text-sm"><div className="af-summary-row"><dt>风格</dt><dd>{CONTEST_STYLES.find((style) => style.value === formState.contest_style)?.label ?? '未设置'}</dd></div><div className="af-summary-row"><dt>解法语言</dt><dd>{LANGUAGES.find((language) => language.value === formState.language)?.label ?? formState.language}</dd></div><div className="af-summary-row"><dt>标签</dt><dd className="break-words">{formState.tags.length > 0 ? formState.tags.join('、') : '未选择'}</dd></div><div className="af-summary-row"><dt>题面模型</dt><dd className="break-words">{formState.statement_model || '默认模型'}</dd></div><div className="af-summary-row"><dt>验算模型</dt><dd className="break-words">{formState.verification_model || '默认模型'}</dd></div></dl>
+          <dl className="space-y-3 text-sm"><div className="af-summary-row"><dt>风格</dt><dd>{CONTEST_STYLES.find((style) => style.value === formState.contest_style)?.label ?? '未设置'}</dd></div><div className="af-summary-row"><dt>解法语言</dt><dd>{LANGUAGES.find((language) => language.value === formState.language)?.label ?? formState.language}</dd></div><div className="af-summary-row"><dt>标签</dt><dd className="break-words">{formState.tags.length > 0 ? formState.tags.join('、') : '未选择'}</dd></div><div className="af-summary-row"><dt>题面模型</dt><dd className="break-words">{modelOverrideEnabled && formState.statement_model || '默认模型'}</dd></div><div className="af-summary-row"><dt>验算模型</dt><dd className="break-words">{modelOverrideEnabled && formState.verification_model || '默认模型'}</dd></div></dl>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={formState.similar_limit > 0} onChange={(event) => handleFieldChange('similar_limit', event.target.checked ? 3 : 0)} />开启相似检测<span className="ml-auto text-xs text-[var(--dm)]">{formState.similar_limit > 0 ? `最多 ${formState.similar_limit} 个近邻` : '已关闭'}</span></label>
           <div className="af-sticky-actions"><button type="submit" className="forge-btn-primary w-full" disabled={submitDisabled}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{loading ? '正在提交…' : formState.similar_limit > 0 ? '生成并去重' : '开始生成'}</button><button type="button" className="forge-btn-secondary w-full" onClick={handleResetForm} disabled={loading}><RotateCcw className="h-4 w-4" />重置表单</button></div>
           <p className="af-hint">生成包含题面、解法、题解与测试数据。提交后可在任务详情查看实际执行结果。</p>

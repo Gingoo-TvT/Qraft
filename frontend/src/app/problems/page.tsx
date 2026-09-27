@@ -13,11 +13,12 @@ import {
 } from 'lucide-react';
 
 import Pagination from '@/components/Pagination';
+import ProblemSetSelection from '@/components/problem-sets/ProblemSetSelection';
 import { EmptyState, PageHeader } from '@/components/ui/Workspace';
 import RefreshButton from '@/components/RefreshButton';
 import { useProblems } from '@/hooks/useProblems';
 import { useTags } from '@/hooks/useProblems';
-import type { ProblemFilter, ProblemLevel, ProblemStatus } from '@/lib/types';
+import type { Problem, ProblemFilter, ProblemLevel, ProblemStatus } from '@/lib/types';
 import {
   cn,
   formatDate,
@@ -323,7 +324,15 @@ function FilterBar({ filter, onFilterChange }: FilterBarProps) {
 }
 
 function ProblemsList() {
-  const querySearch = useSearchParams().get('search') ?? '';
+  const searchParams = useSearchParams();
+  const querySearch = searchParams.get('search') ?? '';
+  const targetSetID = searchParams.get('set') ?? undefined;
+  const [selected, setSelected] = useState<Problem[]>([]);
+  const [savingSelection, setSavingSelection] = useState(false);
+  const selectedIDs = new Set(selected.map(problem => problem.id));
+  function selectProblem(problem: Problem, checked: boolean) {
+    setSelected(current => checked ? (current.some(item => item.id === problem.id) ? current : [...current, problem]) : current.filter(item => item.id !== problem.id));
+  }
   const previousSearch = useRef(querySearch);
   const { problems, total, page, loading, error, refresh, setFilter, filter } =
     useProblems({ page: 1, size: DEFAULT_PAGE_SIZE, sort_by: 'created_at', sort_order: 'desc', search: querySearch || undefined });
@@ -337,12 +346,17 @@ function ProblemsList() {
 
   return (
     <div className="af-page">
-      <PageHeader eyebrow="内容管理" title="编程题库" description="从题面到测试数据，集中管理你的编程题与发布状态。"
+      <PageHeader eyebrow="内容管理" title="编程题库" description="管理编程题与测试数据，勾选题目即可新建题集或加入已有题集。"
         actions={<>
           <Link href="/problems/hydro/import" className="forge-btn-secondary"><Upload className="h-4 w-4" />校验 Hydro 包</Link>
+          <Link href="/problems/import" className="forge-btn-secondary">链接与题目导入</Link>
           <Link href="/problems/new" className="forge-btn-primary"><Plus className="h-4 w-4" />创建题目</Link>
         </>}
       />
+
+      {(selected.length > 0 || targetSetID) && <ProblemSetSelection selected={selected} targetSetID={targetSetID}
+        onRemove={id => setSelected(current => current.filter(problem => problem.id !== id))}
+        onClear={() => setSelected([])} onBusyChange={setSavingSelection} />}
 
       {error && <div role="alert" className="rounded-lg border border-danger-400/30 bg-danger-50 p-4 text-sm text-danger-600 dark:bg-danger-500/10 dark:text-danger-400">
         {error}<button className="ml-3 underline" onClick={refresh}>重新加载</button>
@@ -357,15 +371,19 @@ function ProblemsList() {
 
         <div className="af-table-scroll">
           <table className="forge-table">
-            <thead><tr><th>题目</th><th className="w-32">类型 / 难度</th><th className="w-28">状态</th><th className="w-40">创建时间</th><th className="w-24">操作</th></tr></thead>
+            <thead><tr><th className="w-12"><input type="checkbox" aria-label="选择本页全部题目" disabled={savingSelection || loading || problems.length === 0}
+              checked={problems.length > 0 && problems.every(problem => selectedIDs.has(problem.id))}
+              ref={node => { if (node) node.indeterminate = problems.some(problem => selectedIDs.has(problem.id)) && !problems.every(problem => selectedIDs.has(problem.id)); }}
+              onChange={event => { const checked = event.target.checked; setSelected(current => checked ? [...current, ...problems.filter(problem => !current.some(item => item.id === problem.id))] : current.filter(item => !problems.some(problem => problem.id === item.id))); }} /></th><th>题目</th><th className="w-32">类型 / 难度</th><th className="w-28">状态</th><th className="w-40">创建时间</th><th className="w-24">操作</th></tr></thead>
             <tbody>
-              {loading && problems.length === 0 ? Array.from({ length: 5 }).map((_, row) => <tr key={row}>{Array.from({ length: 5 }).map((_, column) => <td key={column}><div className="forge-skeleton h-5 w-full" /></td>)}</tr>)
-                : problems.length === 0 ? <tr><td colSpan={5}><EmptyState icon={BookOpen}
+              {loading && problems.length === 0 ? Array.from({ length: 5 }).map((_, row) => <tr key={row}>{Array.from({ length: 6 }).map((_, column) => <td key={column}><div className="forge-skeleton h-5 w-full" /></td>)}</tr>)
+                : problems.length === 0 ? <tr><td colSpan={6}><EmptyState icon={BookOpen}
                   title={error ? '题库暂时不可用' : hasFilters ? '没有符合条件的编程题' : '从第一道题开始积累'}
                   description={error ? '重新加载后查看题面、测试数据和发布状态。' : hasFilters ? '调整标题、类型或高级筛选，再试一次。' : '描述出题想法，生成题面、题解与测试数据，完成后会显示在题库中。'}
                   action={error ? <button className="forge-btn-secondary" onClick={refresh}>重新加载</button> : <Link href="/problems/new" className="forge-btn-primary"><Plus className="h-4 w-4" />创建题目</Link>}
                 /></td></tr>
                 : problems.map((problem) => <tr key={problem.id}>
+                  <td><input type="checkbox" aria-label={'选择题目：' + problem.title} checked={selectedIDs.has(problem.id)} disabled={savingSelection} onChange={event => selectProblem(problem, event.target.checked)} /></td>
                   <td className="min-w-[280px]">
                     <Link href={`/problems/${problem.id}`} className="af-link font-medium">{problem.title}</Link>
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--dm)]">

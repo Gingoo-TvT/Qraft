@@ -2,6 +2,7 @@ package activities
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -27,8 +28,9 @@ const (
 	remoteSandboxHeartbeatInterval = 10 * time.Second
 	// The sandbox compile cgroup allows 60 seconds. Keep transport and audit
 	// headroom so the client never cancels a compile the service still permits.
-	remoteSandboxCompileTimeout = 75 * time.Second
-	remoteSandboxMaxOutputBytes = 8 << 20
+	remoteSandboxCompileTimeout   = 75 * time.Second
+	remoteSandboxMaxOutputBytes   = 8 << 20
+	remoteSandboxBatchOutputBytes = 64 << 20
 )
 
 var startRemoteSandboxHeartbeat = heartbeatWhile
@@ -90,6 +92,32 @@ func (a *Activities) RunSandboxActivity(
 		)
 	}
 
+	// Imported problems may legitimately print close to 8 MiB for one case.
+	// Keep each declared batch within 64 MiB without reducing that case's cap.
+	// Explicit output contracts and non-imported execution stay unchanged.
+	const importedBatchSize = remoteSandboxBatchOutputBytes / remoteSandboxMaxOutputBytes
+	if limits.UseDeploymentLimits && limits.OutputLimitBytes == 0 && len(testCases) > importedBatchSize {
+		combined := &SandboxResult{PayloadVersion: ActivityPayloadVersion}
+		for first := 0; first < len(testCases); first += importedBatchSize {
+			end := min(first+importedBatchSize, len(testCases))
+			batch, err := a.RunSandboxActivity(ctx, solution, testCases[first:end], limits)
+			if err != nil {
+				return nil, fmt.Errorf("imported sandbox cases %d-%d: %w", first+1, end, err)
+			}
+			if len(batch.Outputs) != end-first {
+				return nil, fmt.Errorf("imported sandbox batch returned an incomplete result")
+			}
+			combined.Outputs = append(combined.Outputs, batch.Outputs...)
+			refs := make([]*ArtifactRef, end-first)
+			copy(refs, batch.OutputArtifacts)
+			combined.OutputArtifacts = append(combined.OutputArtifacts, refs...)
+			combined.TimeTaken = append(combined.TimeTaken, batch.TimeTaken...)
+			combined.MemoryUsed = append(combined.MemoryUsed, batch.MemoryUsed...)
+			combined.Batches = append(combined.Batches, SandboxExecutionBatch{FirstCase: first, CaseCount: end - first, Audit: batch.Audit})
+		}
+		return combined, nil
+	}
+
 	inputs := make([]string, len(testCases))
 	for i, tc := range testCases {
 		recordSandboxHeartbeat(ctx, fmt.Sprintf("resolving test case %d/%d", i+1, len(testCases)))
@@ -127,16 +155,37 @@ func (a *Activities) RunSandboxActivity(
 		remoteLimits.OutputLimitBytes = limits.OutputLimitBytes
 	}
 	remoteLimits.Profile = limits.Profile
+	// The service limits the sum of declared case budgets, not only each case.
+	// Keep explicit contracts fixed; adaptive defaults must fit the whole batch.
+	maximumOutput := int64(remoteSandboxMaxOutputBytes)
+	if len(inputs) > 0 && maximumOutput > remoteSandboxBatchOutputBytes/int64(len(inputs)) {
+		maximumOutput = remoteSandboxBatchOutputBytes / int64(len(inputs))
+	}
+	if limits.OutputLimitBytes == 0 && remoteLimits.OutputLimitBytes > maximumOutput {
+		remoteLimits.OutputLimitBytes = maximumOutput
+	}
 	remoteResult, err := func() (*remotesandbox.RemoteExecuteResult, error) {
 		stopHeartbeat := startRemoteSandboxHeartbeat(ctx, "waiting for remote sandbox execution", remoteSandboxHeartbeatInterval)
 		defer stopHeartbeat()
-		return executor.Execute(
-			ctx,
-			solution.Language,
-			solution.SourceCode,
-			inputs,
-			remoteLimits,
-		)
+		result, err := executor.Execute(ctx, solution.Language, solution.SourceCode, inputs, remoteLimits)
+		if limits.UseDeploymentLimits && lowerImportedMemoryCeiling(err, &remoteLimits) {
+			recordSandboxHeartbeat(ctx, "validating imported problem under stricter deployed memory ceiling")
+			result, err = executor.Execute(ctx, solution.Language, solution.SourceCode, inputs, remoteLimits)
+		}
+		// The default 2 MiB stdout cap can reject a correct program on a large
+		// generated input. Retry the same complete batch once at the existing
+		// 8 MiB ceiling, retaining one coherent execution audit. Explicit
+		// caller limits (including S3 contracts) are never changed.
+		if err == nil && result != nil && result.Compile.Success && limits.OutputLimitBytes == 0 && remoteLimits.OutputLimitBytes < maximumOutput {
+			for _, item := range result.Results {
+				if item.Verdict == remotesandbox.Verdict("OLE") {
+					remoteLimits.OutputLimitBytes = maximumOutput
+					recordSandboxHeartbeat(ctx, fmt.Sprintf("retrying sandbox stdout at %d bytes per case", maximumOutput))
+					return executor.Execute(ctx, solution.Language, solution.SourceCode, inputs, remoteLimits)
+				}
+			}
+		}
+		return result, err
 	}()
 	if err != nil {
 		return nil, fmt.Errorf("remote sandbox execution: %w", err)
@@ -225,6 +274,24 @@ func (a *Activities) RunSandboxActivity(
 		)
 	}
 	return result, nil
+}
+
+// Only accept the service's explicit memory ceiling rejection. Never weaken
+// strict S3 profiles or reinterpret program MLE/failures as deployment limits.
+func lowerImportedMemoryCeiling(err error, limits *remotesandbox.RemoteLimits) bool {
+	var remote *remotesandbox.RemoteError
+	if limits.Profile != "" || !errors.As(err, &remote) || remote.StatusCode != 422 || remote.Code != "deployment_limit_exceeded" {
+		return false
+	}
+	var requested, maximum int
+	if n, scanErr := fmt.Sscanf(remote.Message, "memory_limit_mb %d exceeds deployed execute maximum %d", &requested, &maximum); scanErr != nil || n != 2 || requested != limits.MemoryLimitMB || maximum < 16 || maximum >= requested {
+		return false
+	}
+	if remote.Message != fmt.Sprintf("memory_limit_mb %d exceeds deployed execute maximum %d", requested, maximum) {
+		return false
+	}
+	limits.MemoryLimitMB = maximum
+	return true
 }
 
 func (a *Activities) remoteSandboxExecutor(timeout time.Duration) (remotesandbox.RemoteExecutor, error) {

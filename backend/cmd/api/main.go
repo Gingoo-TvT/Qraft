@@ -17,6 +17,7 @@ import (
 	"github.com/Gingoo-TvT/Qraft/backend/internal/generationapi"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/handler"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/handler/middleware"
+	"github.com/Gingoo-TvT/Qraft/backend/internal/identity"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/llm"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/llm/prompts"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/qualitymode"
@@ -24,6 +25,7 @@ import (
 	"github.com/Gingoo-TvT/Qraft/backend/internal/runtimekeys"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/secureconfig"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/service"
+	"github.com/Gingoo-TvT/Qraft/backend/internal/sources"
 	"github.com/Gingoo-TvT/Qraft/backend/pkg/minio"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
@@ -139,6 +141,19 @@ func main() {
 	defer temporalClient.Close()
 	log.Info().Msg("temporal client connected")
 
+	// Every API workflow start records the authenticated owner before Temporal
+	// receives it. Worker-internal child workflows inherit their parent owner.
+	workflowAccess := service.NewWorkflowAccess(temporalClient, repository.NewWorkflowOwnershipRepository(dbPool))
+	temporalClient = service.NewOwnedWorkflowClient(temporalClient, workflowAccess)
+
+	identityService := identity.NewService(identity.NewStore(dbPool), identity.Options{
+		BootstrapToken: cfg.App.AuthBootstrapToken,
+	})
+	authHandler := handler.NewAuthHandler(identityService, handler.AuthHandlerOptions{
+		DevMode: cfg.App.DevMode, SecureCookie: cfg.App.AuthSecureCookie,
+		TrustProxy: cfg.App.AuthTrustProxy,
+	})
+
 	// LLM client.
 	llmClient := llm.NewClient(cfg.Anthropic)
 	llmClient.SetAPIKeyResolver(runtimeKeyStore)
@@ -189,7 +204,9 @@ func main() {
 		problemRepo, testCaseRepo, tagRepo, runtimeVectorRepo,
 		temporalClient, cfg.Temporal.TaskQueue,
 	)
+	problemService.SetWorkflowAccess(workflowAccess)
 	quizService := service.NewQuizService(quizRepo, kpRepo, temporalClient, cfg.Temporal.TaskQueue)
+	quizService.SetWorkflowAccess(workflowAccess)
 	quizImportService := service.NewQuizImportService(quizRepo, kpRepo)
 	quizExportService := service.NewQuizExportService(quizRepo)
 	setHydroExportService := service.NewHydroExportService(problemService, minioClient)
@@ -245,15 +262,22 @@ func main() {
 	quizService.SetLLMRuntimeResolver(statementRuntimeResolver)
 	problemSetService := service.NewProblemSetService(problemSetRepo, problemService, quizService, setHydroExportService, llmClient)
 	problemSetService.SetLLMRuntimeResolver(statementRuntimeResolver)
+	problemSetService.SetWorkflowAccess(workflowAccess)
 	problemSetHandler := handler.NewProblemSetHandler(problemSetService)
 	if generationAPIMode.ProductRouteEnabled {
 		problemSetHandler.SetGenerationService(service.NewProblemSetGenerationService(problemSetService, problemSetRepo, problemService, tagRepo, temporalClient, cfg.Temporal.TaskQueue, service.NewProblemSetProviderResolver(llmSettingsHandler, runtimeKeyStore)))
 	}
+	sourceHandler := handler.NewSourceHandler(sources.NewFetcher())
+	problemImportHandler := handler.NewProblemImportHandler(service.NewProblemImportService(
+		temporalClient, cfg.Temporal.TaskQueue,
+		service.NewProblemImportProviderResolver(llmSettingsHandler, runtimeKeyStore), workflowAccess,
+	))
 	reviewSettingsHandler := handler.NewReviewSettingsHandler(reviewSettingsRepo)
 	problemHandler := handler.NewProblemHandler(problemService, minioClient, runtimeKeyStore)
 	problemHandler.SetPermanentProviderSettings(llmSettingsHandler, true)
 	problemHandler.SetQG15ExportEnabled(qg15ExportMode.HydroS3BindingEnabled)
 	workflowHandler := handler.NewWorkflowHandler(temporalClient, cfg.Temporal.Namespace)
+	workflowHandler.SetWorkflowAccess(workflowAccess)
 	ratingRepo := repository.NewRatingRepository(dbPool)
 	ratingRepo.SetArtifactReader(func(ctx context.Context, key string) ([]byte, error) {
 		return minioClient.DownloadFileLimited(ctx, key, 1<<20)
@@ -304,8 +328,10 @@ func main() {
 	// Global middleware.
 	e.Use(middleware.Recovery())
 	e.Use(middleware.Logger())
-	e.Use(middleware.CORS(middleware.DefaultCORSConfig()))
-	e.Use(middleware.Auth(cfg.App.JWTSecret, cfg.App.DevMode))
+	e.Use(middleware.CORS(middleware.CORSConfig{AllowOrigins: cfg.App.AllowedOrigins}))
+	e.Use(middleware.SessionAuth(identityService, middleware.SessionAuthOptions{DevMode: cfg.App.DevMode}))
+	e.Use(middleware.RouteAuthorization())
+	e.Use(handler.SharedProblemAccess(problemService))
 
 	// Health check (public, bypasses auth via PublicPaths).
 	e.GET("/health", func(c echo.Context) error {
@@ -317,10 +343,16 @@ func main() {
 	// -----------------------------------------------------------------------
 
 	v1 := e.Group("/api/v1")
+	authHandler.Register(v1)
+	v1.GET("/settings/generation-readiness", llmSettingsHandler.HandleGenerationReadiness)
 	ratingHandler.Register(v1)
 	v1.GET("/integration/capabilities", integrationCapabilitiesHandler.HandleGet)
 
 	// Problems.
+	v1.POST("/sources/preview", sourceHandler.HandlePreview)
+	v1.POST("/problem-imports", problemImportHandler.HandleStart)
+	v1.GET("/problem-imports/:id", problemImportHandler.HandleGet)
+	v1.POST("/problem-imports/:id/resume", problemImportHandler.HandleResume)
 	v1.POST("/problems/generate", problemHandler.HandleGenerate)
 	if generationAPIMode.ProductRouteEnabled {
 		handler.RegisterGenerationJobRoutes(v1, generationJobHandler)

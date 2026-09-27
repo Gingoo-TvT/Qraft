@@ -18,6 +18,7 @@ import {
   backfillLocalEmbeddingModel,
   deployLocalEmbeddingModel,
   getEmbeddingRuntimeSettings,
+  getSavedEmbeddingRuntimeSettings,
   getEmbeddingStatus,
   testLocalEmbeddingEndpoint,
 } from '@/lib/api';
@@ -25,6 +26,7 @@ import type {
   ActiveEmbeddingModelStatus,
   EmbeddingKind,
   EmbeddingRuntimeSettings,
+  SavedEmbeddingRuntimeSettings,
   LocalEmbeddingActivateResult,
   LocalEmbeddingBackfillResult,
   LocalEmbeddingDeployResult,
@@ -57,6 +59,17 @@ const KIND_LABELS: Record<EmbeddingKind, string> = {
 
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : '操作失败';
+}
+
+function activationMessage(result: {
+  activation_blocked_reason?: string;
+  requires_runtime_restart: boolean;
+}): string | null {
+  if (!result.activation_blocked_reason) return null;
+  if (result.requires_runtime_restart) {
+    return '配置已保存，但 API 的运行配置尚未同步。请部署者同步已保存的去重配置，并重新创建 API 与 worker 服务；完成后刷新状态，再回填和启用。仅重启现有容器不会更新部署环境。';
+  }
+  return result.activation_blocked_reason;
 }
 
 function formatTime(value?: string): string {
@@ -181,12 +194,15 @@ export default function EmbeddingAdminPage() {
   const [statuses, setStatuses] = useState<ActiveEmbeddingModelStatus[]>([]);
   const [runtimeSettings, setRuntimeSettings] =
     useState<EmbeddingRuntimeSettings | null>(null);
+  const [savedSettings, setSavedSettings] =
+    useState<SavedEmbeddingRuntimeSettings | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [testResult, setTestResult] =
     useState<LocalEmbeddingTestResult | null>(null);
   const [deployResult, setDeployResult] =
     useState<LocalEmbeddingDeployResult | null>(null);
+  const [registeredModelVersionID, setRegisteredModelVersionID] = useState('');
   const [backfillResult, setBackfillResult] =
     useState<LocalEmbeddingBackfillResult | null>(null);
   const [activateResult, setActivateResult] =
@@ -202,31 +218,45 @@ export default function EmbeddingAdminPage() {
   );
 
   const latestModelVersionID =
-    deployResult?.model_version.id ||
+    registeredModelVersionID ||
     runtimeSettings?.statement_model_version_id ||
     '';
 
-  const loadStatus = useCallback(async () => {
+  const loadStatus = useCallback(async (hydrateForm = false) => {
     setPendingAction('status');
     setErrorMessage(null);
     try {
-      const [statusResponse, runtimeResponse] = await Promise.all([
+      const [statusResponse, runtimeResponse, savedResponse] = await Promise.all([
         getEmbeddingStatus(),
         getEmbeddingRuntimeSettings(),
+        hydrateForm ? getSavedEmbeddingRuntimeSettings().catch((err) => {
+          setErrorMessage('无法恢复已保存配置：' + toErrorMessage(err));
+          return null;
+        }) : Promise.resolve(null),
       ]);
       setStatuses(statusResponse.data ?? []);
       const savedRuntime = runtimeResponse.data ?? null;
       setRuntimeSettings(savedRuntime);
-      if (savedRuntime) {
-        setEndpoint((current) => ({
-          ...current,
-          base_url: savedRuntime.base_url,
-          model: savedRuntime.model,
-          api_key:
-            current.api_key === DEFAULT_ENDPOINT.api_key
-              ? ''
-              : current.api_key,
-        }));
+      const saved = savedResponse?.data;
+      if (saved?.configured) {
+        setSavedSettings(saved);
+        setRegisteredModelVersionID(saved.model_version_id || '');
+      }
+      const initialSettings = saved?.configured ? saved : savedRuntime;
+      if (hydrateForm && initialSettings) {
+        setEndpoint((current) => {
+          // The status endpoint describes the running API, not the newly
+          // saved settings. Hydrate once without replacing an in-flight edit.
+          if (
+            current.base_url !== DEFAULT_ENDPOINT.base_url ||
+            current.model !== DEFAULT_ENDPOINT.model
+          ) return current;
+          return {
+            ...current,
+            base_url: initialSettings.base_url || '',
+            model: initialSettings.model || '',
+          };
+        });
       }
     } catch (err) {
       setErrorMessage(toErrorMessage(err));
@@ -238,8 +268,17 @@ export default function EmbeddingAdminPage() {
   }, []);
 
   useEffect(() => {
-    loadStatus();
+    void loadStatus(true);
   }, [loadStatus]);
+
+  async function refreshStatus() {
+    // These are snapshots of earlier operations, not the refreshed runtime.
+    setDeployResult(null);
+    setActivateResult(null);
+    setBackfillResult(null);
+    setTestResult(null);
+    await loadStatus();
+  }
 
   function updateEndpoint<K extends keyof LocalEmbeddingEndpointConfig>(
     key: K,
@@ -273,6 +312,8 @@ export default function EmbeddingAdminPage() {
   }
 
   async function handleDeploy(activate: boolean) {
+    setDeployResult(null);
+    setActivateResult(null);
     const result = await runAction(activate ? 'deploy-activate' : 'deploy', async () => {
       const res = await deployLocalEmbeddingModel({
         endpoint: endpointPayload,
@@ -282,8 +323,15 @@ export default function EmbeddingAdminPage() {
     });
     if (result) {
       setDeployResult(result);
+      setRegisteredModelVersionID(result.model_version.id);
       setTestResult(result.test);
       if (result.runtime_settings_saved) {
+        setSavedSettings({
+          configured: true,
+          base_url: endpointPayload.base_url,
+          model: endpointPayload.model,
+          model_version_id: result.model_version.id,
+        });
         setEndpoint((current) => ({ ...current, api_key: '' }));
       }
       if (result.activation_reports) {
@@ -320,6 +368,8 @@ export default function EmbeddingAdminPage() {
       setErrorMessage('请先部署模型；模型版本 ID 会由系统自动生成');
       return;
     }
+    setDeployResult(null);
+    setActivateResult(null);
     const result = await runAction(dryRun ? 'activate-dry-run' : 'activate', async () => {
       const res = await activateLocalEmbeddingModel({
         model_version_id: id,
@@ -338,7 +388,7 @@ export default function EmbeddingAdminPage() {
   return (
     <div className="af-page">
       <PageHeader title="去重服务" description="配置向量模型，为题面和题解提供去重能力。版本身份由系统自动解析。" actions={
-        <button type="button" onClick={loadStatus} disabled={busy} className="forge-btn-secondary">
+        <button type="button" onClick={refreshStatus} disabled={busy} className="forge-btn-secondary">
           {pendingAction === 'status' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}刷新状态
         </button>
       } />
@@ -384,7 +434,15 @@ export default function EmbeddingAdminPage() {
                   onChange={(e) => updateEndpoint('api_key', e.target.value)}
                   autoComplete="off"
                 />
-                {runtimeSettings?.api_key_configured && (
+                {savedSettings?.configured &&
+                  savedSettings.base_url === endpointPayload.base_url &&
+                  savedSettings.model === endpointPayload.model ? (
+                  <p className="mt-1 text-xs text-success-600 dark:text-success-400">
+                    配置已保存；如已保存密钥，无需重复填写。
+                  </p>
+                ) : runtimeSettings?.api_key_configured &&
+                  runtimeSettings.base_url === endpointPayload.base_url &&
+                  runtimeSettings.model === endpointPayload.model && (
                   <p className="mt-1 text-xs text-success-600 dark:text-success-400">
                     已配置匹配密钥；留空时自动使用
                   </p>
@@ -427,7 +485,7 @@ export default function EmbeddingAdminPage() {
 
         <div className="af-form-rail">
           <div className="af-summary">
-            <SectionHeading title="保存与启用" description="先测试连接，再部署所选模型。" />
+            <SectionHeading title="保存与启用" description="先测试并保存配置；运行配置同步后，才能启用所选模型。" />
             <div className="space-y-3"><ActionButton
                 icon={Plug}
                 label="测试连接"
@@ -476,12 +534,12 @@ export default function EmbeddingAdminPage() {
 
             {deployResult?.activation_blocked_reason && (
               <div className="mt-4 rounded-lg border border-warning-400/40 bg-warning-50 p-3 text-sm text-warning-600 dark:bg-warning-500/10 dark:text-warning-400">
-                {deployResult.activation_blocked_reason}
+                {activationMessage(deployResult)}
               </div>
             )}
             {activateResult?.activation_blocked_reason && (
               <div className="mt-4 rounded-lg border border-warning-400/40 bg-warning-50 p-3 text-sm text-warning-600 dark:bg-warning-500/10 dark:text-warning-400">
-                {activateResult.activation_blocked_reason}
+                {activationMessage(activateResult)}
               </div>
             )}
           </div>
@@ -537,7 +595,7 @@ export default function EmbeddingAdminPage() {
                     >
                       {deployResult.runtime_matches
                         ? '运行配置匹配'
-                        : '需要重启服务'}
+                        : '需要同步运行配置'}
                     </StatusBadge>
                   </div>
                   <p className="break-all font-mono text-xs text-anvil-500 dark:text-anvil-400">
@@ -550,7 +608,7 @@ export default function EmbeddingAdminPage() {
                       : 'text-warning-600 dark:text-warning-400',
                   )}>
                     {deployResult.runtime_settings_saved
-                      ? '配置已加密保存；重启服务后按 Base URL 和模型名自动解析版本'
+                      ? '配置已加密保存。若运行配置不匹配，请部署者同步已保存配置并重新创建 API 与 worker；网页保存不会自动更新容器环境。'
                       : 'API Key 未保存；当前服务未配置持久设置存储'}
                   </p>
                   <div className="grid grid-cols-2 gap-3 text-sm">
@@ -614,6 +672,8 @@ export default function EmbeddingAdminPage() {
                     <span className="font-medium">启用</span>
                     <StatusBadge
                       tone={
+                        activateResult.runtime_matches &&
+                        activateResult.reports.length > 0 &&
                         activateResult.reports.every(
                           (report) => report.decision === 'go',
                         )
@@ -621,9 +681,11 @@ export default function EmbeddingAdminPage() {
                           : 'warning'
                       }
                     >
-                      {activateResult.runtime_matches
-                        ? '运行配置匹配'
-                        : '运行配置不一致'}
+                      {!activateResult.runtime_matches
+                        ? '运行配置不一致'
+                        : activateResult.reports.length === 0
+                          ? '尚未完成启用检查'
+                          : '运行配置匹配'}
                     </StatusBadge>
                   </div>
                   <div className="space-y-2">
@@ -636,6 +698,11 @@ export default function EmbeddingAdminPage() {
                           {KIND_LABELS[
                             report.embedding_kind as EmbeddingKind
                           ] ?? report.embedding_kind}
+                          {report.operation === 'cutover' &&
+                            (!report.old_model_version_id ||
+                              report.old_model_version_id === '00000000-0000-0000-0000-000000000000') && (
+                              <span className="ml-2 text-xs text-anvil-400">首次启用</span>
+                            )}
                         </span>
                         <StatusBadge
                           tone={report.committed ? 'success' : 'neutral'}

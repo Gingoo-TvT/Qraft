@@ -639,3 +639,13 @@ func containsControlRune(value string) bool {
 	}
 	return false
 }
+
+// HandleGenerationReadiness exposes no provider addresses, key identities or
+// administrator configuration to members.
+func (h *LLMSettingsHandler) HandleGenerationReadiness(c echo.Context) error {
+	_, err := h.EffectiveRuntimeConfig(c.Request().Context(), "statement")
+	if err != nil {
+		return ok(c, map[string]any{"ready": false, "message": "请联系管理员完成模型配置"})
+	}
+	return ok(c, map[string]any{"ready": true, "message": ""})
+}

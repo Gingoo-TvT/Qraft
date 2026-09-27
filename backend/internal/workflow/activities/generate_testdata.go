@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -212,7 +211,26 @@ func (a *Activities) GenerateTestDataActivity(
 	applyStatementLLMRuntime(req, params)
 
 	stopHB := heartbeatWhile(ctx, "calling LLM to generate test data", 15*time.Second)
-	resp, sourceArtifact, err := a.completeLLMWithProvenance(ctx, "testdata", req, 2)
+	var importedResult *TestDataResult
+	var resp *llm.Response
+	var sourceArtifact *ArtifactRef
+	var sourceArtifacts []*ArtifactRef
+	var err error
+	if params.SourceProblem != nil {
+		resp, sourceArtifact, sourceArtifacts, err = a.completeImportedStructured(ctx, "testdata", req, func(response *llm.Response) error {
+			parsed, e := parseTestDataResponse(restoreJSONPrefill(response.Text()))
+			if e != nil {
+				return e
+			}
+			if e = a.prepareImportedTestData(ctx, parsed, config); e != nil {
+				return e
+			}
+			importedResult = parsed
+			return nil
+		})
+	} else {
+		resp, sourceArtifact, err = a.completeLLMWithProvenance(ctx, "testdata_generator_v2", req, 2)
+	}
 	stopHB()
 	if err != nil {
 		return nil, wrapRequiredProviderEffectError("llm call for test data generation", err)
@@ -238,7 +256,10 @@ func (a *Activities) GenerateTestDataActivity(
 		)
 	}
 
-	result, err := parseTestDataResponse(responseText)
+	result := importedResult
+	if result == nil {
+		result, err = parseTestDataResponse(responseText)
+	}
 	if err != nil {
 		log.Error().
 			Str("response_preview", truncate(responseText, 2000)).
@@ -249,7 +270,10 @@ func (a *Activities) GenerateTestDataActivity(
 			err,
 		)
 	}
-	result.SourceArtifacts = append(result.SourceArtifacts, sourceArtifact)
+	result.SourceArtifacts = sourceArtifacts
+	if len(sourceArtifacts) == 0 {
+		result.SourceArtifacts = append(result.SourceArtifacts, sourceArtifact)
+	}
 
 	if result.GeneratorCode != "" {
 		result.GeneratorSHA256 = sha256Bytes([]byte(result.GeneratorCode))
@@ -258,7 +282,9 @@ func (a *Activities) GenerateTestDataActivity(
 	// Prepend custom cases before generator execution. Explicit-count callers
 	// retain the historical truncation behavior; adaptive callers never lose a
 	// requested corner case to an implicit slice operation.
-	result.TestCases = mergeCustomCasesForConfig(result.TestCases, config)
+	if importedResult == nil {
+		result.TestCases = mergeCustomCasesForConfig(result.TestCases, config)
+	}
 	hasEmpty := false
 	for _, testCase := range result.TestCases {
 		if testCase.Input == "" {
@@ -547,7 +573,7 @@ func buildTestDataPromptWithParams(statement string, config domain.TestDataConfi
 	sb.WriteString("For large constraints (n >= 1000), you MUST use the generator_code approach.\n")
 	sb.WriteString("Do NOT attempt to output large test data as inline text.\n")
 	sb.WriteString("Keep every generated test input at or below 8 MiB.\n")
-	sb.WriteString("Framework cases default to 1 MiB each; set output_limit_bytes up to 8388608 only for a larger case. The server batches cases by their declared output budgets.\n")
+	sb.WriteString("Framework cases default to 8 MiB each (8388608 bytes); declare a smaller output_limit_bytes for known small cases to enable efficient batching, or up to 32 MiB (33554432 bytes) for one large legal input. All final inputs combined must remain within 32 MiB. The server batches cases by their declared output budgets. Estimate serialized digits and separators; preserve maximum problem dimensions and never truncate input.\n")
 	sb.WriteString("Keep the combined size of all generated test inputs at or below 32 MiB. " +
 		"Use compact whitespace and vary structural adversaries instead of repeating the maximum size in every case.\n")
 	sb.WriteString(fmt.Sprintf("For differential validation, only cases in an explicitly BruteCheck group are selected when such groups exist; otherwise only public samples are selected. Every selected case must be genuinely small under the problem's own semantics, not merely short serialized text (for example, do not use a 15-digit upper bound just because it fits in a few bytes). Keep selected inputs at most %d bytes and reserve maximum-scale cases for main-solution-only groups.\n", MaxReferenceDifferentialInputBytes))
@@ -581,22 +607,12 @@ func parseTestDataResponse(text string) (*TestDataResult, error) {
 
 	var parsed testDataJSON
 
-	if err := json.Unmarshal([]byte(text), &parsed); err != nil {
-		jsonContent := extractJSONBlock(text)
-		if jsonContent != "" {
-			if err2 := json.Unmarshal([]byte(jsonContent), &parsed); err2 == nil {
-				goto testdataParsed
-			}
-		}
-		jsonContent = extractOutermostJSON(text)
-		if jsonContent != "" {
-			if err2 := json.Unmarshal([]byte(jsonContent), &parsed); err2 == nil {
-				goto testdataParsed
-			}
-		}
-		return nil, fmt.Errorf("failed to parse test data response as JSON")
+	if err := decodeRequiredObject(text, &parsed, "test_cases"); err != nil {
+		return nil, err
 	}
-testdataParsed:
+	if len(parsed.TestCases) == 0 {
+		return nil, fmt.Errorf("required top-level test_cases must be a non-empty array")
+	}
 	if parsed.GeneratorRecipe != nil {
 		if strings.TrimSpace(parsed.GeneratorCode) != "" {
 			return nil, fmt.Errorf("use generator_recipe or generator_code, not both")
@@ -788,9 +804,9 @@ const (
 	generatorTimeLimitMS = 3000
 	generatorMemoryMB    = 256
 	// Generated problem inputs have a different size profile from judged
-	// solution output. The sandbox accepts at most 8 MiB per input and 32 MiB
+	// solution output. The sandbox accepts at most 32 MiB per input and 32 MiB
 	// across a judged batch, so enforce those limits at generation time too.
-	generatorMaxOutputBytes      int64 = 8 << 20
+	generatorMaxOutputBytes      int64 = 32 << 20
 	generatorMaxTotalOutputBytes       = 32 << 20
 	// JSON escaping can expand a control-heavy stdout by six times. A single
 	// 8 MiB case leaves headroom below the independent 64 MiB response ceiling.
@@ -850,7 +866,7 @@ func (a *Activities) executeGeneratorWithEvidence(ctx context.Context, code stri
 	for start := 0; start < len(caseIndexes); {
 		outputLimit := cases[caseIndexes[start]].GeneratorOutputLimitBytes
 		if outputLimit == 0 {
-			outputLimit = generatorMaxOutputBytes
+			outputLimit = testdatagen.DefaultCaseBytes
 		}
 		size, err := testdatagen.BatchSize(outputLimit)
 		if err != nil {
@@ -860,7 +876,7 @@ func (a *Activities) executeGeneratorWithEvidence(ctx context.Context, code stri
 		for j := start + 1; j < end; j++ {
 			nextLimit := cases[caseIndexes[j]].GeneratorOutputLimitBytes
 			if nextLimit == 0 {
-				nextLimit = generatorMaxOutputBytes
+				nextLimit = testdatagen.DefaultCaseBytes
 			}
 			if nextLimit != outputLimit {
 				end = j
@@ -877,7 +893,7 @@ func (a *Activities) executeGeneratorWithEvidence(ctx context.Context, code stri
 	}
 	limits := remotesandbox.NewRemoteLimits(generatorTimeLimitMS, generatorMemoryMB)
 	limits.MaxProcesses = 16
-	limits.OutputLimitBytes = generatorMaxOutputBytes
+	limits.OutputLimitBytes = testdatagen.DefaultCaseBytes
 	limits.Seed = deterministicGeneratorSeed(code, -1, -1)
 
 	// Write generated inputs into a copy so a later batch failure cannot leak a
@@ -934,8 +950,8 @@ func (a *Activities) executeGeneratorWithEvidence(ctx context.Context, code stri
 				return nil, invalidGeneratedTestArtifactErrorf("generator batch %d/%d result %d has unexpected index %d", batchNumber, batchCount, batchResultIndex, item.Index)
 			}
 			if item.Verdict != remotesandbox.VerdictOK || item.ExitCode != 0 || item.Signal != "" {
-				return nil, invalidGeneratedTestArtifactErrorf("generator case %d failed closed with verdict %s (exit=%d signal=%s): %s",
-					caseIndex+1, item.Verdict, item.ExitCode, item.Signal, boundedDiagnostic(item.Stderr))
+				return nil, invalidGeneratedTestArtifactErrorf("generator case %d failed closed with verdict %s (exit=%d signal=%s, output_limit_bytes=%d, time_limit_ms=%d): %s",
+					caseIndex+1, item.Verdict, item.ExitCode, item.Signal, outputLimit, generatorTimeLimitMS, boundedDiagnostic(item.Stderr))
 			}
 			if item.Stdout == "" {
 				return nil, invalidGeneratedTestArtifactErrorf("generator case %d produced empty input", caseIndex+1)

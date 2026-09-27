@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Gingoo-TvT/Qraft/backend/internal/access"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/repository"
 	algoworkflow "github.com/Gingoo-TvT/Qraft/backend/internal/workflow"
@@ -28,6 +29,7 @@ import (
 // ProblemService implements the business logic for problem CRUD operations and
 // orchestrates generation workflows via Temporal.
 type ProblemService struct {
+	permissions  *WorkflowAccess
 	problemRepo  *repository.ProblemRepository
 	testCaseRepo *repository.TestCaseRepository
 	tagRepo      *repository.TagRepository
@@ -53,6 +55,34 @@ func NewProblemService(
 		temporal:     temporal,
 		taskQueue:    taskQueue,
 	}
+}
+
+func (s *ProblemService) SetWorkflowAccess(a *WorkflowAccess) { s.permissions = a }
+func (s *ProblemService) authorizeProblem(ctx context.Context, p *domain.Problem) error {
+	if s.permissions == nil {
+		return nil
+	}
+	identity, ok := access.FromContext(ctx)
+	if !ok {
+		return ErrNotFound
+	}
+	if identity.IsAdmin() {
+		return nil
+	}
+	if p.Status == domain.ProblemStatusPublished {
+		return nil
+	}
+	if p.WorkflowID == nil {
+		return ErrNotFound
+	}
+	allowed, err := s.permissions.CanAccess(ctx, *p.WorkflowID)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -98,6 +128,9 @@ func (s *ProblemService) GetProblem(ctx context.Context, id uuid.UUID) (*domain.
 		}
 		return nil, fmt.Errorf("getting problem: %w", err)
 	}
+	if err := s.authorizeProblem(ctx, p); err != nil {
+		return nil, err
+	}
 	// detailed_solution is a Markdown field.  Older generation runs could
 	// persist a provider JSON envelope, so normalize it at the read boundary as
 	// well as at write time.  This keeps existing records usable without a
@@ -112,6 +145,11 @@ func (s *ProblemService) GetGenerationStandardEvidence(
 	ctx context.Context,
 	id uuid.UUID,
 ) (domain.GenerationStandardEvidenceBinding, bool, error) {
+	if s.permissions != nil {
+		if _, err := s.GetProblem(ctx, id); err != nil {
+			return domain.GenerationStandardEvidenceBinding{}, false, err
+		}
+	}
 	binding, ok, err := s.problemRepo.GetGenerationStandardEvidence(ctx, id)
 	if err != nil {
 		return domain.GenerationStandardEvidenceBinding{}, false, fmt.Errorf("getting generation standard evidence: %w", err)
@@ -121,6 +159,9 @@ func (s *ProblemService) GetGenerationStandardEvidence(
 
 // ListProblemsFilter encapsulates query parameters for listing problems.
 type ListProblemsFilter struct {
+	Search        string
+	SortBy        string
+	SortOrder     string
 	Level         *domain.ProblemLevel
 	MinDifficulty *int
 	MaxDifficulty *int
@@ -173,6 +214,11 @@ type PublicReleaseApprovalInput struct {
 
 // ListProblems returns a paginated, filtered list of problems.
 func (s *ProblemService) ListProblems(ctx context.Context, filter ListProblemsFilter) (*ListProblemsResult, error) {
+	if s.permissions != nil {
+		if _, ok := access.FromContext(ctx); !ok {
+			return nil, ErrNotFound
+		}
+	}
 	page := filter.Page
 	if page < 1 {
 		page = 1
@@ -200,6 +246,9 @@ func (s *ProblemService) ListProblems(ctx context.Context, filter ListProblemsFi
 
 func problemRepositoryListFilter(filter ListProblemsFilter, pageSize, offset int) repository.ProblemFilter {
 	return repository.ProblemFilter{
+		Search:             filter.Search,
+		OrderBy:            filter.SortBy,
+		OrderDirection:     filter.SortOrder,
 		Level:              filter.Level,
 		MinDiff:            filter.MinDifficulty,
 		MaxDiff:            filter.MaxDifficulty,
@@ -447,7 +496,7 @@ func (s *ProblemService) TriggerGPLTBatchGeneration(ctx context.Context, params 
 // re-running sandbox execution and output comparison.
 func (s *ProblemService) ValidateProblem(ctx context.Context, id uuid.UUID) (client.WorkflowRun, error) {
 	// Verify the problem exists.
-	problem, err := s.problemRepo.GetByID(ctx, id)
+	problem, err := s.GetProblem(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -502,7 +551,7 @@ func problemValidationWorkflowID(id uuid.UUID, updatedAt time.Time) string {
 
 // GetMetadata returns the lightweight JSON metadata for a problem.
 func (s *ProblemService) GetMetadata(ctx context.Context, id uuid.UUID) (*domain.ProblemMetadata, error) {
-	p, err := s.problemRepo.GetByID(ctx, id)
+	p, err := s.GetProblem(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -515,7 +564,7 @@ func (s *ProblemService) GetMetadata(ctx context.Context, id uuid.UUID) (*domain
 
 // GetEditorial returns the detailed solution / editorial text for a problem.
 func (s *ProblemService) GetEditorial(ctx context.Context, id uuid.UUID) (string, error) {
-	p, err := s.problemRepo.GetByID(ctx, id)
+	p, err := s.GetProblem(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", ErrNotFound
@@ -528,7 +577,7 @@ func (s *ProblemService) GetEditorial(ctx context.Context, id uuid.UUID) (string
 // GetTestCases returns all test cases for a problem.
 func (s *ProblemService) GetTestCases(ctx context.Context, problemID uuid.UUID) ([]*domain.TestCase, error) {
 	// Verify the problem exists.
-	_, err := s.problemRepo.GetByID(ctx, problemID)
+	_, err := s.GetProblem(ctx, problemID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -547,7 +596,7 @@ func (s *ProblemService) GetTestCases(ctx context.Context, problemID uuid.UUID) 
 // separate from the editorial endpoint prevents callers from confusing the
 // human-readable Markdown explanation with the executable standard solution.
 func (s *ProblemService) GetSolutions(ctx context.Context, problemID uuid.UUID) ([]*domain.Solution, error) {
-	if _, err := s.problemRepo.GetByID(ctx, problemID); err != nil {
+	if _, err := s.GetProblem(ctx, problemID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -569,6 +618,11 @@ func (s *ProblemService) GetTestCase(ctx context.Context, id uuid.UUID) (*domain
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("getting test case: %w", err)
+	}
+	if s.permissions != nil {
+		if _, err := s.GetProblem(ctx, tc.ProblemID); err != nil {
+			return nil, err
+		}
 	}
 	return tc, nil
 }

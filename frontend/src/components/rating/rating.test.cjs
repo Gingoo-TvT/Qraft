@@ -70,8 +70,8 @@ test('public review API sends only the scoped token header, not workspace auth o
  global.fetch = async (url, init) => { captured = { url, init }; return Response.json({ success: true, data: { revision: 1 } }); };
  await api.submitRatingFeedback('review-secret', form.emptyFeedback());
  assert.equal(captured.url, 'https://service.invalid/api/v1/public/rating/review');
- assert.equal(captured.init.headers['X-Qraft-Review-Token'], 'review-secret');
- assert.equal(captured.init.headers.Authorization, undefined);
+ assert.equal(new Headers(captured.init.headers).get('X-Qraft-Review-Token'), 'review-secret');
+ assert.equal(new Headers(captured.init.headers).get('Authorization'), null);
  assert.equal(captured.init.credentials, 'omit');
  assert.equal(captured.init.referrerPolicy, 'no-referrer');
  assert.equal(captured.init.cache, 'no-store');

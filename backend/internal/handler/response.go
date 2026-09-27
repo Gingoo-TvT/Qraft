@@ -20,9 +20,10 @@ type APIResponse struct {
 
 // Meta carries pagination metadata for list endpoints.
 type Meta struct {
-	Total int `json:"total,omitempty"`
-	Page  int `json:"page,omitempty"`
-	Size  int `json:"size,omitempty"`
+	NextPageToken string `json:"next_page_token,omitempty"`
+	Total         int    `json:"total,omitempty"`
+	Page          int    `json:"page,omitempty"`
+	Size          int    `json:"size,omitempty"`
 }
 
 // APIError describes a machine-readable error returned to the client.

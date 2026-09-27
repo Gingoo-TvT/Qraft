@@ -3,6 +3,10 @@
 import argparse
 import base64
 import hashlib
+import ipaddress
+import getpass
+import http.cookiejar
+import urllib.error
 import io
 import json
 import os
@@ -72,6 +76,7 @@ def initialize():
         "TEMPORAL_DB_PASSWORD": secrets.token_urlsafe(32),
         "MINIO_SECRET_KEY": secrets.token_urlsafe(32),
         "JWT_SECRET": secrets.token_urlsafe(48),
+        "QRAFT_AUTH_BOOTSTRAP_TOKEN": secrets.token_urlsafe(48),
         "ALGOFORGE_SETTINGS_ENCRYPTION_KEY": base64.b64encode(secrets.token_bytes(32)).decode(),
         "SOURCE_REVISION": revision,
         "SANDBOX_REVISION": revision,
@@ -82,6 +87,68 @@ def initialize():
     with os.fdopen(fd, "w") as stream:
         stream.write(data)
     print("Created .env with new local credentials; model settings remain empty.")
+
+def enable_shared_auth():
+    env = read_env(ENV)
+    values = {"APP_DEV_MODE": "false", "QRAFT_AUTH_SECURE_COOKIE": "true"}
+    if not env.get("QRAFT_AUTH_BOOTSTRAP_TOKEN"):
+        values["QRAFT_AUTH_BOOTSTRAP_TOKEN"] = secrets.token_urlsafe(48)
+    update(values)
+    print("Shared authentication configured. Use an HTTPS entrypoint; restart the API explicitly to apply.")
+
+def cloud_host(value):
+    # Accept one public IPv4 or a DNS hostname, never Caddy syntax or a URL.
+    value = value.strip().lower()
+    try:
+        addr = ipaddress.ip_address(value)
+    except ValueError:
+        if len(value) > 253 or "." not in value or all(label.isdigit() for label in value.split(".")) or not all(
+            re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+            for label in value.split(".")
+        ) or value.endswith((".localhost", ".local", ".internal")):
+            raise ValueError("Provide a public IPv4 address or DNS hostname without scheme, path, or port.")
+    else:
+        if addr.version != 4 or not addr.is_global:
+            raise ValueError("Cloud IP deployment requires a public IPv4 address.")
+    return value
+
+def enable_cloud(host):
+    host = cloud_host(host)
+    enable_shared_auth()
+    update({"QRAFT_PUBLIC_HOST": host, "DOMAIN": "https://" + host})
+    print("Cloud entrypoint configured. Use docker-compose.cloud.yml; no service has been started.")
+
+def authenticated_metadata(opener, base, endpoint):
+    # The loopback local mode needs no account. Shared mode prompts only after
+    # the server says authentication is required; credentials never enter .env.
+    try:
+        with opener.open(endpoint, timeout=15) as response:
+            return json.loads(response.read(1 << 20))
+    except urllib.error.HTTPError as error:
+        if error.code != 401:
+            raise
+    parsed = urllib.parse.urlsplit(base)
+    if parsed.scheme != "https" and parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
+        raise ValueError("Administrator login requires HTTPS outside loopback.")
+    email = input("Administrator email: ").strip()
+    password = getpass.getpass("Administrator password: ")
+    request = urllib.request.Request(base.rstrip("/") + "/api/v1/auth/login",
+        data=json.dumps({"email": email, "password": password}).encode(),
+        headers={"Content-Type": "application/json", "X-Qraft-Client": "1"}, method="POST")
+    with opener.open(request, timeout=30) as response:
+        session = json.loads(response.read(1 << 20))["data"]
+    try:
+        with opener.open(endpoint, timeout=15) as response:
+            return json.loads(response.read(1 << 20))
+    finally:
+        logout = urllib.request.Request(base.rstrip("/") + "/api/v1/auth/logout", data=b"{}",
+            headers={"Content-Type": "application/json", "X-Qraft-Client": "1",
+                     "X-CSRF-Token": session["csrf_token"]}, method="POST")
+        try:
+            with opener.open(logout, timeout=15):
+                pass
+        except (OSError, urllib.error.URLError):
+            print("Could not revoke this temporary setup session; change your account password to revoke all active sessions.")
 
 def bind_sandbox():
     env = read_env(ENV)
@@ -121,9 +188,8 @@ def saved_embedding(base, model_version_id=""):
     endpoint = base.rstrip("/") + "/api/v1/embedding/saved-runtime-settings"
     if selected:
         endpoint += "?" + urllib.parse.urlencode({"model_version_id": selected})
-    opener = urllib.request.build_opener(NoRedirect)
-    with opener.open(endpoint, timeout=15) as response:
-        body = json.loads(response.read(1 << 20))
+    opener = urllib.request.build_opener(NoRedirect, urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+    body = authenticated_metadata(opener, base, endpoint)
     data = body["data"]
     if not data.get("configured"):
         raise ValueError("First save and test an embedding provider in the service settings.")
@@ -152,6 +218,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--bind-sandbox", action="store_true")
+    group.add_argument("--cloud-host", metavar="IP_OR_DOMAIN", help="Configure the HTTPS cloud overlay for a public IPv4 or DNS hostname.")
+    group.add_argument("--shared", action="store_true", help="Enable account authentication and HTTPS cookies for a shared service.")
+    group.add_argument("--show-bootstrap-token", action="store_true", help="Print this instance's one-time administrator initialization token to your private terminal.")
     group.add_argument("--refresh-revision", action="store_true",
                        help="Refresh source identity immediately before building images.")
     group.add_argument("--saved-embedding", metavar="SERVICE_ROOT")
@@ -160,7 +229,18 @@ def main():
     args = parser.parse_args()
     if args.model_version_id and not args.saved_embedding:
         parser.error("--model-version-id requires --saved-embedding")
+    if args.cloud_host is not None:
+        cloud_host(args.cloud_host)
     initialize()
+    if args.cloud_host is not None:
+        enable_cloud(args.cloud_host)
+    if args.shared:
+        enable_shared_auth()
+    if args.show_bootstrap_token:
+        token = read_env(ENV).get("QRAFT_AUTH_BOOTSTRAP_TOKEN", "")
+        if not token:
+            raise ValueError("No initialization token configured. Run --shared first.")
+        print(token)
     if args.refresh_revision:
         refresh_revision()
     if args.bind_sandbox:

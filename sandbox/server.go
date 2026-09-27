@@ -14,7 +14,7 @@ import (
 const (
 	maxRequestBytes                   = 64 << 20
 	maxSourceBytes                    = 2 << 20
-	maxInputBytes                     = 8 << 20
+	maxInputBytes                     = 32 << 20
 	maxInputsBytes                    = 32 << 20
 	maxCases                          = 256
 	maxBatchExecutionBudgetMS         = 120_000

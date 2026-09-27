@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Gingoo-TvT/Qraft/backend/internal/access"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/diversity"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/diversityapi"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/diversitymode"
@@ -440,7 +441,8 @@ func (h *S5MicroBatchHandler) describeS5MicroBatch(
 		return nil, errS5MicroBatchNotFound
 	}
 	storedPrincipal, err := generationJobMemoString(info, diversityapi.MemoPrincipalScopeKey)
-	if err != nil || storedPrincipal != principalSHA256 {
+	principal, _ := access.FromContext(ctx)
+	if err != nil || (storedPrincipal != principalSHA256 && !principal.IsAdmin()) {
 		return nil, errS5MicroBatchNotOwned
 	}
 	if payloadSHA256 != "" {

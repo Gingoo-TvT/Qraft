@@ -205,7 +205,7 @@ func TestIntegrationCapabilitiesAcceptsEveryIndependentRollbackCombination(t *te
 						sets.Generation.Enabled != response.GenerationJobs.Enabled || sets.Export.Enabled != response.Exports.PortableSetsEnabled {
 						t.Fatalf("set capability drifted: %+v", response)
 					}
-					if sets.Generation.Enabled != (len(sets.Generation.Routes) == 3) || sets.Export.Enabled != (len(sets.Export.Routes) == 1) {
+					if sets.Generation.Enabled != (len(sets.Generation.Routes) == 3) || sets.Export.Enabled != (len(sets.Export.Routes) == 2) {
 						t.Fatalf("disabled set operations must not advertise available routes: %+v", sets)
 					}
 					setHandler := NewProblemSetHandler(nil)

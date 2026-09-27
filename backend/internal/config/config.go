@@ -186,12 +186,16 @@ type ProvenanceConfig struct {
 
 // AppConfig holds general application settings.
 type AppConfig struct {
-	Port                  int    `mapstructure:"port"`
-	JWTSecret             string `mapstructure:"jwt_secret"`
-	SettingsEncryptionKey string `mapstructure:"settings_encryption_key"`
-	LogLevel              string `mapstructure:"log_level"`
-	DevMode               bool   `mapstructure:"dev_mode"`
-	ModelRoutingEnabled   bool   `mapstructure:"model_routing_enabled"`
+	AuthBootstrapToken    string   `mapstructure:"auth_bootstrap_token"`
+	AuthSecureCookie      bool     `mapstructure:"auth_secure_cookie"`
+	AuthTrustProxy        bool     `mapstructure:"auth_trust_proxy"`
+	AllowedOrigins        []string `mapstructure:"allowed_origins"`
+	Port                  int      `mapstructure:"port"`
+	JWTSecret             string   `mapstructure:"jwt_secret"`
+	SettingsEncryptionKey string   `mapstructure:"settings_encryption_key"`
+	LogLevel              string   `mapstructure:"log_level"`
+	DevMode               bool     `mapstructure:"dev_mode"`
+	ModelRoutingEnabled   bool     `mapstructure:"model_routing_enabled"`
 }
 
 // Load reads configuration from environment variables and an optional
@@ -310,6 +314,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("provenance.retention_max_batches", 100)
 
 	// App defaults.
+	v.SetDefault("app.auth_bootstrap_token", "")
+	v.SetDefault("app.auth_secure_cookie", true)
+	v.SetDefault("app.auth_trust_proxy", false)
+	v.SetDefault("app.allowed_origins", []string{})
 	v.SetDefault("app.port", 8080)
 	v.SetDefault("app.jwt_secret", "")
 	v.SetDefault("app.settings_encryption_key", "")
@@ -385,6 +393,10 @@ func setDefaults(v *viper.Viper) {
 	v.BindEnv("provenance.retention_max_batches", "PROVENANCE_RETENTION_MAX_BATCHES")
 
 	// App
+	v.BindEnv("app.auth_bootstrap_token", "QRAFT_AUTH_BOOTSTRAP_TOKEN")
+	v.BindEnv("app.auth_secure_cookie", "QRAFT_AUTH_SECURE_COOKIE")
+	v.BindEnv("app.auth_trust_proxy", "QRAFT_AUTH_TRUST_PROXY")
+	v.BindEnv("app.allowed_origins", "QRAFT_ALLOWED_ORIGINS")
 	v.BindEnv("app.port", "API_PORT")
 	v.BindEnv("app.jwt_secret", "JWT_SECRET")
 	v.BindEnv("app.settings_encryption_key", "ALGOFORGE_SETTINGS_ENCRYPTION_KEY")
@@ -397,6 +409,16 @@ func setDefaults(v *viper.Viper) {
 // and returns an error describing any missing or invalid fields.
 func Validate(cfg *Config) error {
 	var errs []string
+	if token := cfg.App.AuthBootstrapToken; token != "" && len(token) < 32 {
+		errs = append(errs, "QRAFT_AUTH_BOOTSTRAP_TOKEN must contain at least 32 bytes")
+	}
+	for _, origin := range cfg.App.AllowedOrigins {
+		parsed, err := url.Parse(origin)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") ||
+			parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || strings.Contains(origin, "*") {
+			errs = append(errs, "QRAFT_ALLOWED_ORIGINS must contain exact HTTP(S) origins without paths or wildcards")
+		}
+	}
 
 	if cfg.Database.Host == "" {
 		errs = append(errs, "database.host is required")

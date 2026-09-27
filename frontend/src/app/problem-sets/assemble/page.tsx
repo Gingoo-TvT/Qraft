@@ -73,7 +73,7 @@ export default function AssembleProblemSetPage() {
   return (
     <div className="af-page">
       <PageHeader eyebrow="创作 / 题库组卷" title="从题库组成一套题" description="左侧设置题型与选题条件，右侧预览实际结果；确认后保存为试卷、作业或比赛。"
-        actions={<Link href="/problem-sets/new" className="forge-btn-secondary">需要新题？自动生成题集</Link>}>
+        actions={<><Link href="/problems" className="forge-btn-primary">手动勾选题库组卷</Link><Link href="/problem-sets/new" className="forge-btn-secondary">自动生成新题集</Link></>}>
         <Link href="/problem-sets" className="af-link inline-flex items-center gap-1"><ArrowLeft className="h-4 w-4" />返回题集</Link>
       </PageHeader>
       {error && <div role="alert" className="rounded-lg border border-danger-400/30 bg-danger-50 p-4 text-sm text-danger-600 dark:bg-danger-500/10 dark:text-danger-400">{error}</div>}

@@ -30,7 +30,7 @@ func TestExecuteGeneratorUsesRemoteSandboxWithDeterministicSeeds(t *testing.T) {
 		if language != "cpp" || source != code {
 			t.Fatalf("unexpected generator request language=%q source=%q", language, source)
 		}
-		if limits.TimeLimitMS != generatorTimeLimitMS || limits.MemoryLimitMB != generatorMemoryMB || limits.OutputLimitBytes != generatorMaxOutputBytes || limits.MaxProcesses != 16 {
+		if limits.TimeLimitMS != generatorTimeLimitMS || limits.MemoryLimitMB != generatorMemoryMB || limits.OutputLimitBytes != 8<<20 || limits.MaxProcesses != 16 {
 			t.Fatalf("unexpected generator limits: %+v", limits)
 		}
 		capturedInputs = append(capturedInputs, append([]string(nil), inputs...))

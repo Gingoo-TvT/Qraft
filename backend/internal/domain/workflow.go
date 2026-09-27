@@ -375,6 +375,8 @@ type StepResult struct {
 // typically serialised to JSON and stored alongside the workflow record so that
 // the orchestrator can resume after interruptions.
 type WorkflowState struct {
+	// ProblemID identifies a persisted result when one already exists.
+	ProblemID string `json:"problem_id,omitempty"`
 	// The step currently being executed (or the last completed step).
 	CurrentStep WorkflowStep `json:"current_step"`
 
@@ -457,6 +459,7 @@ func (ws *WorkflowState) MarkRejectedQuarantinedAt(completedAt time.Time) {
 // problem-generation workflow.  It is supplied by the API caller (or a
 // scheduler) and threaded through every step.
 type ProblemGenParams struct {
+	SourceProblem *SourceProblem `json:"source_problem,omitempty"`
 	// Two-tier classification.
 	Level ProblemLevel `json:"level"`
 

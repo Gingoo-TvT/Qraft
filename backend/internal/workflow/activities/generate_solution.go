@@ -115,11 +115,12 @@ func (a *Activities) generateSolutionPair(
 	applyBruteSolutionLLMRuntime(bruteReq, params)
 
 	type solutionCallResult struct {
-		response *llm.Response
-		artifact *ArtifactRef
-		err      error
-		role     string
-		duration time.Duration
+		response       *llm.Response
+		artifact       *ArtifactRef
+		err            error
+		role           string
+		duration       time.Duration
+		emptyArtifacts []*ArtifactRef
 	}
 	callResults := make([]solutionCallResult, 2)
 	var calls sync.WaitGroup
@@ -129,14 +130,14 @@ func (a *Activities) generateSolutionPair(
 	go func() {
 		defer calls.Done()
 		startedAt := time.Now()
-		response, artifact, callErr := a.completeLLMWithProvenance(ctx, "solution_main", mainReq, 2)
-		callResults[0] = solutionCallResult{response: response, artifact: artifact, err: callErr, role: "main", duration: time.Since(startedAt)}
+		response, artifact, emptyArtifacts, callErr := a.completeSolutionRoleForParams(ctx, "solution_main", mainReq, params)
+		callResults[0] = solutionCallResult{response: response, artifact: artifact, err: callErr, role: "main", duration: time.Since(startedAt), emptyArtifacts: emptyArtifacts}
 	}()
 	go func() {
 		defer calls.Done()
 		startedAt := time.Now()
-		response, artifact, callErr := a.completeLLMWithProvenance(ctx, "solution_brute", bruteReq, 2)
-		callResults[1] = solutionCallResult{response: response, artifact: artifact, err: callErr, role: "brute", duration: time.Since(startedAt)}
+		response, artifact, emptyArtifacts, callErr := a.completeSolutionRoleForParams(ctx, "solution_brute", bruteReq, params)
+		callResults[1] = solutionCallResult{response: response, artifact: artifact, err: callErr, role: "brute", duration: time.Since(startedAt), emptyArtifacts: emptyArtifacts}
 	}()
 	calls.Wait()
 	for _, call := range callResults {
@@ -213,8 +214,12 @@ func (a *Activities) generateSolutionPair(
 		"brute_lines", strings.Count(bruteSolution.SourceCode, "\n"),
 	)
 
+	artifacts := []*ArtifactRef{mainSourceArtifact, bruteSourceArtifact}
+	for _, call := range callResults {
+		artifacts = append(artifacts, call.emptyArtifacts...)
+	}
 	return &SolutionResult{
-		SourceArtifacts:    []*ArtifactRef{mainSourceArtifact, bruteSourceArtifact},
+		SourceArtifacts:    artifacts,
 		MainSolution:       *mainSolution,
 		BruteSolution:      *bruteSolution,
 		OracleIndependence: assessOracleIndependence(mainSourceArtifact, bruteSourceArtifact),
@@ -397,4 +402,40 @@ parsed:
 		Language:     language,
 		SourceCode:   parsed.SourceCode,
 	}, nil
+}
+
+// A successful provider envelope can contain no usable text. Replaying the
+// same completed effect would repeat that empty response forever, so allow
+// one distinct, durable attempt without changing the original request.
+func (a *Activities) completeSolutionRole(ctx context.Context, role string, request *llm.Request) (*llm.Response, *ArtifactRef, []*ArtifactRef, error) {
+	response, artifact, err := a.completeLLMWithProvenance(ctx, role, request, 2)
+	if err != nil || response == nil || strings.TrimSpace(response.Text()) != "" || response.StopReason == "max_tokens" {
+		return response, artifact, nil, err
+	}
+	emptyError := func(reason string) error {
+		return temporal.NewNonRetryableApplicationError(
+			fmt.Sprintf("%s returned no model text (stop reason %q); no further automatic text recovery", role, reason),
+			"EmptyLLMResponse", nil,
+		)
+	}
+	// Refusals, cancellations and unknown terminal reasons must remain errors.
+	if response.StopReason != "end_turn" && response.StopReason != "stop" {
+		return response, artifact, nil, emptyError(response.StopReason)
+	}
+	emptyArtifacts := []*ArtifactRef{artifact}
+	response, artifact, err = a.completeLLMWithProvenance(ctx, role+"_empty_retry", request, 2)
+	if err == nil && response != nil && strings.TrimSpace(response.Text()) == "" && response.StopReason != "max_tokens" {
+		err = emptyError(response.StopReason)
+	}
+	return response, artifact, emptyArtifacts, err
+}
+
+func (a *Activities) completeSolutionRoleForParams(ctx context.Context, role string, request *llm.Request, params domain.ProblemGenParams) (*llm.Response, *ArtifactRef, []*ArtifactRef, error) {
+	if params.SourceProblem == nil {
+		return a.completeSolutionRole(ctx, role, request)
+	}
+	return a.completeImportedStructured(ctx, role, request, func(response *llm.Response) error {
+		_, err := parseSolutionResponse(restoreJSONPrefill(response.Text()), domain.SolutionTypeMain, "cpp")
+		return err
+	})
 }

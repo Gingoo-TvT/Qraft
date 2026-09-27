@@ -257,11 +257,19 @@ func (s *Server) native(w http.ResponseWriter, r *http.Request, path string) {
 		s.mu.Unlock()
 	case "download":
 		var p struct {
-			Path string `json:"path"`
-			Name string `json:"name"`
+			Path string          `json:"path"`
+			Name string          `json:"name"`
+			Body json.RawMessage `json:"body,omitempty"`
 		}
 		if err = decode(r, &p); err == nil {
-			data, err = s.download(r.Context(), p.Path, p.Name, r.Header.Get("Authorization"))
+			target, targetErr := s.backend()
+			if targetErr != nil {
+				err = targetErr
+			} else if selected := r.Header.Get("X-Qraft-Service"); selected != "" && strings.TrimRight(selected, "/") != strings.TrimRight(target.String(), "/") {
+				err = fmt.Errorf("服务连接已切换，请重新选择下载")
+			} else {
+				data, err = s.downloadRequest(r.Context(), p.Path, p.Name, r.Header.Get("Authorization"), p.Body, r.Header.Get("X-CSRF-Token"))
+			}
 		}
 	case "save-text":
 		var p struct {

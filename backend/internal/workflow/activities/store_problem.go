@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/temporal"
 )
 
 const autoApprovalQuarantineReason = "public_release denied by current provenance policy"
@@ -35,6 +36,9 @@ const autoApprovalQuarantineReason = "public_release denied by current provenanc
 //  6. Generates an embedding for the problem and stores it in the vector store
 //  7. Applies the publication gate, publishing or quarantining the problem
 func (a *Activities) StoreProblemActivity(ctx context.Context, input StoreInput) (result *StoreResult, retErr error) {
+	if err := validateImportStoreEvidence(input); err != nil {
+		return nil, err
+	}
 	if err := validateStoreProblemPayloadVersion(input.PayloadVersion); err != nil {
 		return nil, err
 	}
@@ -72,6 +76,14 @@ func (a *Activities) StoreProblemActivity(ctx context.Context, input StoreInput)
 		"title", input.Statement.Title,
 		"test_count", len(input.TestCases),
 	)
+
+	// Persist the authenticated workflow owner immediately before writing the
+	// result. A transient Temporal lookup or database failure returns an error,
+	// allowing the activity retry; an ownerless historical workflow is left
+	// untouched by the callback.
+	if err := a.persistWorkflowOwner(ctx, input.WorkflowID); err != nil {
+		return nil, err
+	}
 
 	now := time.Now()
 	problemID := uuid.New()
@@ -210,6 +222,10 @@ func (a *Activities) StoreProblemActivity(ctx context.Context, input StoreInput)
 		problem.WorkflowID = &input.WorkflowID
 	}
 
+	if input.ImportSource != nil {
+		prepareImportedProblemRecord(problem)
+	}
+
 	// Generate metadata JSON.
 	metadataBytes, err := problem.MetadataJSONBytes()
 	if err != nil {
@@ -266,6 +282,9 @@ func (a *Activities) StoreProblemActivity(ctx context.Context, input StoreInput)
 	if input.Params.GenerationEvidence != nil {
 		meta[domain.GenerationStandardEvidenceRequestMetaKey] = input.Params.GenerationEvidence
 	}
+	if input.ImportSource != nil {
+		meta["import_source"] = input.ImportSource
+	}
 	metadataBytes, err = json.Marshal(meta)
 	if err != nil {
 		return nil, fmt.Errorf("encoding problem metadata: %w", err)
@@ -293,7 +312,21 @@ func (a *Activities) StoreProblemActivity(ctx context.Context, input StoreInput)
 	// Insert problem into the database. A racing duplicate delivery fetches and
 	// verifies the stable row instead of creating a second problem.
 	if !problemExists {
-		if err := a.deps.ProblemRepo.Create(ctx, problem); err != nil {
+		create := func() error {
+			if input.ImportSource != nil {
+				return a.deps.ProblemRepo.CreateImportedProblem(ctx, problem, *input.ImportSource)
+			}
+			return a.deps.ProblemRepo.Create(ctx, problem)
+		}
+		if err := create(); err != nil {
+			var incomplete *repository.ImportedIncompleteError
+			if errors.As(err, &incomplete) {
+				return nil, temporal.NewNonRetryableApplicationError(err.Error(), "ImportIncomplete", nil)
+			}
+			var duplicate *repository.ImportedDuplicateError
+			if errors.As(err, &duplicate) {
+				return nil, temporal.NewNonRetryableApplicationError("identical source already imported", "ImportedDuplicate", nil, duplicate.ProblemID.String())
+			}
 			if !isVersioned {
 				return nil, fmt.Errorf("inserting problem into database: %w", err)
 			}
@@ -546,7 +579,7 @@ func (a *Activities) StoreProblemActivity(ctx context.Context, input StoreInput)
 	}
 	var status domain.ProblemStatus
 	var quarantineReason string
-	if input.QualityPassDraft != nil {
+	if input.ImportSource != nil || input.QualityPassDraft != nil {
 		status = domain.ProblemStatusDraft
 		quarantineReason = ""
 	} else if input.ReviewQuarantine != nil {
@@ -1098,6 +1131,9 @@ func isCanonicalStoreSHA256(value string) bool {
 }
 
 func initialStoreProblemStatus(input StoreInput) domain.ProblemStatus {
+	if input.ImportSource != nil {
+		return domain.ProblemStatusDraft
+	}
 	if input.QualityPassDraft != nil {
 		return domain.ProblemStatusDraft
 	}
@@ -1282,4 +1318,46 @@ func computeCaseScores(cfg domain.TestDataConfig, cases []TestCaseData) []int {
 		}
 	}
 	return scores
+}
+
+func validateImportStoreEvidence(input StoreInput) error {
+	if input.ImportSource == nil {
+		return nil
+	}
+	evidence := input.ImportSource
+	if err := evidence.Original.Validate(); err != nil {
+		return err
+	}
+	if input.PayloadVersion != StoreProblemTestManifestPayloadVersion || input.TestManifest == nil || input.TestManifest.DifferentialCheckedCount < 1 || input.ReviewQuarantine != nil || input.QualityPassDraft != nil {
+		return fmt.Errorf("import requires independently validated new data and a separate draft storage contract")
+	}
+	if evidence.OriginalSHA256 != evidence.Original.Hash() || evidence.FinalSHA256 != sha256Bytes([]byte(input.Statement.Statement)) || input.Statement.Title != evidence.Original.Title {
+		return fmt.Errorf("import source identity does not match stored statement")
+	}
+	if formatted := evidence.OJStatement; formatted != nil {
+		if err := formatted.Validate(evidence.Original.Statement); err != nil {
+			return err
+		}
+		if formatted.Markdown() != input.Statement.Statement {
+			return fmt.Errorf("OJ statement differs from its normalized source evidence")
+		}
+		return nil
+	}
+	checked, err := applyImportClarifications(evidence.Original, importAnalysis{Ambiguous: len(evidence.Changes) > 0, Reason: evidence.ClarificationReason, Changes: evidence.Changes})
+	if err != nil {
+		return err
+	}
+	if checked.Statement.Statement != input.Statement.Statement {
+		return fmt.Errorf("import statement changed without exact clarification evidence")
+	}
+	return nil
+}
+
+// Normalize the stored record before either first-create or retry lookup.
+// StoreInput is deliberately unchanged so its idempotency hash stays stable.
+func prepareImportedProblemRecord(problem *domain.Problem) {
+	problem.Source = "qraft_import"
+	if problem.Tags == nil {
+		problem.Tags = []string{}
+	}
 }

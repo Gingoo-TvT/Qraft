@@ -66,7 +66,7 @@ func TestRecipeBatchingPreservesCustomAndGeneratorIndexes(t *testing.T) {
 	t.Setenv("SANDBOX_URL", "http://sandbox:8090")
 	entries := []map[string]any{{"input": "sample\n", "group_id": 0, "is_sample": true}}
 	for i := 1; i < 18; i++ {
-		limit := testdatagen.DefaultCaseBytes
+		limit := int64(1 << 20) // Explicit small-case budgets still batch efficiently.
 		if i == 1 {
 			limit = testdatagen.MaxCaseBytes
 		}

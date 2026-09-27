@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Gingoo-TvT/Qraft/backend/internal/access"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/repository"
 	"github.com/google/uuid"
@@ -55,6 +56,11 @@ func normalizeAssemblyRequest(req *ProblemSetAssemblyRequest) (int, []domain.Qui
 }
 
 func (s *ProblemSetService) PreviewAssembly(ctx context.Context, req ProblemSetAssemblyRequest) (*domain.ProblemSetAssemblyPreview, error) {
+	if s.permissions != nil {
+		if _, ok := access.FromContext(ctx); !ok {
+			return nil, ErrNotFound
+		}
+	}
 	_, types, err := normalizeAssemblyRequest(&req)
 	if err != nil {
 		return nil, err
@@ -153,6 +159,11 @@ func selectAssemblyCandidates(req ProblemSetAssemblyRequest, candidates []domain
 }
 
 func (s *ProblemSetService) Assemble(ctx context.Context, req ProblemSetAssembleRequest) (*domain.ProblemSet, error) {
+	if s.permissions != nil {
+		if _, ok := access.FromContext(ctx); !ok {
+			return nil, ErrNotFound
+		}
+	}
 	total, types, err := normalizeAssemblyRequest(&req.ProblemSetAssemblyRequest)
 	if err != nil {
 		return nil, err
@@ -177,6 +188,10 @@ func (s *ProblemSetService) Assemble(ctx context.Context, req ProblemSetAssemble
 	}
 	if set.CreatedBy == "" {
 		set.CreatedBy = "api"
+	}
+	if p, ok := access.FromContext(ctx); ok {
+		set.OwnerUserID = p.UserID
+		set.CreatedBy = p.UserID
 	}
 	if err := set.NormalizeProblemSet(); err != nil {
 		return nil, fmt.Errorf("validation: %w", err)

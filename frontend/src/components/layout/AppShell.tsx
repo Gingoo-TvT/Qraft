@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import AuthBoundary from '@/components/auth/AuthBoundary';
 import Header from '@/components/layout/Header';
 import { NotificationToaster } from '@/components/layout/NotificationToaster';
 import Sidebar from '@/components/layout/Sidebar';
@@ -34,7 +35,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
    {mobileOpen && <button type="button" aria-label="关闭导航" className="af-sidebar-backdrop" onClick={() => setMobileOpen(false)} />}
    <Sidebar collapsed={collapsed} onCollapsedChange={changeCollapsed} onNavigate={() => setMobileOpen(false)} />
    <div className="af-main"><Header appearance={appearance} onAppearanceChange={changeAppearance} storageError={storageError} onMenu={() => setMobileOpen(!mobileOpen)} menuOpen={mobileOpen} />
-    <main id="workspace-content" className="af-content scrollbar-thin">{children}</main>
+    <main id="workspace-content" className="af-content scrollbar-thin"><AuthBoundary>{children}</AuthBoundary></main>
    </div>
   </div><NotificationToaster />
  </>;

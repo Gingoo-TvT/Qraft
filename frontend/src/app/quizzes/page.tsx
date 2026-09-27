@@ -1,5 +1,6 @@
 'use client';
 
+import { useAuth } from '@/components/auth/AuthProvider';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { BookOpen, Download, Plus, Search, Trash2, Upload, X } from 'lucide-react';
@@ -15,6 +16,7 @@ import type { QuizDifficulty, QuizFilter, QuizType } from '@/lib/types';
 import { formatDate } from '@/lib/utils';
 
 export default function QuizzesPage() {
+  const { isAdmin } = useAuth();
   const [tagInput, setTagInput] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -60,7 +62,7 @@ export default function QuizzesPage() {
     <div className="af-page">
       <PageHeader eyebrow="内容管理" title="客观题库" description="按学科和知识点整理选择题、判断题与填空题。"
         actions={<>
-          <Link href="/quizzes/import" className="forge-btn-secondary"><Upload className="h-4 w-4" />导入 Excel</Link>
+          <Link style={{ display: isAdmin ? undefined : 'none' }} href="/quizzes/import" className="forge-btn-secondary"><Upload className="h-4 w-4" />导入 Excel</Link>
           <Link href="/quizzes/new" className="forge-btn-primary"><Plus className="h-4 w-4" />创建客观题</Link>
         </>}
       />
@@ -143,7 +145,7 @@ export default function QuizzesPage() {
                   <td className="text-sm text-[var(--dm)]">{formatDate(quiz.created_at)}</td>
                   <td><div className="flex items-center gap-4">
                     <Link href={`/quizzes/${quiz.id}`} className="af-link">查看</Link>
-                    <button className="text-danger-500 hover:text-danger-600 disabled:opacity-50" disabled={deletingId !== null} onClick={() => void handleDelete(quiz.id)} aria-label={`删除题目：${quiz.title}`} title="删除题目"><Trash2 className="h-4 w-4" /></button>
+                    <button style={{ display: isAdmin ? undefined : 'none' }} className="text-danger-500 hover:text-danger-600 disabled:opacity-50" disabled={deletingId !== null} onClick={() => void handleDelete(quiz.id)} aria-label={`删除题目：${quiz.title}`} title="删除题目"><Trash2 className="h-4 w-4" /></button>
                   </div></td>
                 </tr>
               ))}

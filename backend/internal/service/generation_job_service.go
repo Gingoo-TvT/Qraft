@@ -237,5 +237,8 @@ func (s *ProblemService) GetProblemByWorkflowID(
 		}
 		return nil, fmt.Errorf("getting generation job result: %w", err)
 	}
+	if err := s.authorizeProblem(ctx, problem); err != nil {
+		return nil, err
+	}
 	return problem, nil
 }

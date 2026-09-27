@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Gingoo-TvT/Qraft/backend/internal/access"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -31,7 +32,22 @@ func (r *ProblemSetRepository) Create(ctx context.Context, set *domain.ProblemSe
 	if r == nil || r.db == nil {
 		return fmt.Errorf("problem set database is required")
 	}
-	return createProblemSet(ctx, r.db, set)
+
+	if len(set.Items) == 0 {
+		return createProblemSet(ctx, r.db, set)
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err = createProblemSet(ctx, tx, set); err != nil {
+		return err
+	}
+	if err = appendSelectedItems(ctx, tx, set.ID, set.Items); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 type problemSetInserter interface {
@@ -39,6 +55,14 @@ type problemSetInserter interface {
 }
 
 func createProblemSet(ctx context.Context, db problemSetInserter, set *domain.ProblemSet) error {
+	if identity, ok := access.FromContext(ctx); ok {
+		set.OwnerUserID = identity.UserID
+		set.CreatedBy = identity.UserID
+		if !identity.IsAdmin() {
+			set.Visibility = domain.ProblemSetVisibilityPrivate
+		}
+	}
+
 	if set.ID == uuid.Nil {
 		set.ID = uuid.New()
 	}
@@ -55,13 +79,13 @@ func createProblemSet(ctx context.Context, db problemSetInserter, set *domain.Pr
 			style_prompt, difficulty_prompt, generated_prompt,
 			generated_prompt_model, generated_prompt_at, desired_item_count,
 			min_item_count, max_item_count, cooldown_sets, total_score, status,
-			created_by, created_at, updated_at, generation_config
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+			created_by, created_at, updated_at, generation_config, owner_user_id
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
 		set.ID, set.Code, set.Title, set.Description, set.Kind, set.Visibility,
 		set.Subject, set.Tags, set.StylePrompt, set.DifficultyPrompt,
 		set.GeneratedPrompt, set.GeneratedPromptModel, nullableTime(set.GeneratedPromptAt), set.DesiredItemCount,
 		set.MinItemCount, set.MaxItemCount, set.CooldownSets, set.TotalScore,
-		set.Status, set.CreatedBy, set.CreatedAt, set.UpdatedAt, set.GenerationConfig,
+		set.Status, set.CreatedBy, set.CreatedAt, set.UpdatedAt, set.GenerationConfig, set.OwnerUserID,
 	)
 	if err != nil {
 		return fmt.Errorf("creating problem set: %w", err)
@@ -121,6 +145,11 @@ func (r *ProblemSetRepository) List(ctx context.Context, filter ProblemSetListFi
 	}
 	var conditions []string
 	args := make([]interface{}, 0, 4)
+	if identity, ok := access.FromContext(ctx); ok && !identity.IsAdmin() {
+		conditions = append(conditions, "(visibility='public' OR owner_user_id=$1)")
+		args = append(args, identity.UserID)
+	}
+
 	if filter.Kind != nil {
 		conditions = append(conditions, fmt.Sprintf("kind=$%d", len(args)+1))
 		args = append(args, *filter.Kind)
@@ -404,6 +433,8 @@ func (r *ProblemSetRepository) ListRecentLedger(ctx context.Context, limit int) 
 	if limit > 50 {
 		limit = 50
 	}
+	identity, hasIdentity := access.FromContext(ctx)
+	member := hasIdentity && !identity.IsAdmin()
 	rows, err := r.db.Query(ctx, `
 		SELECT id,set_id,revision,event_type,snapshot_sha256,knowledge_point_keys,
 		       item_fingerprints,overlap_report,created_at
@@ -412,10 +443,10 @@ func (r *ProblemSetRepository) ListRecentLedger(ctx context.Context, limit int) 
 			       id,set_id,revision,event_type,snapshot_sha256,knowledge_point_keys,
 			       item_fingerprints,overlap_report,created_at
 			FROM problem_set_ledger_entries
-			WHERE event_type='exported'
+			WHERE event_type='exported' AND (NOT $2 OR set_id IN (SELECT id FROM problem_sets WHERE visibility='public' OR owner_user_id=$3))
 			ORDER BY set_id,created_at DESC,id DESC
 		) recent
-		ORDER BY created_at DESC,id DESC LIMIT $1`, limit)
+		ORDER BY created_at DESC,id DESC LIMIT $1`, limit, member, identity.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("listing recent problem set ledger: %w", err)
 	}
@@ -443,7 +474,7 @@ const problemSetSelectSQL = `
 SELECT id,code,title,description,kind,visibility,subject,tags,style_prompt,
        difficulty_prompt,generated_prompt,generated_prompt_model,generated_prompt_at,
        desired_item_count,min_item_count,max_item_count,cooldown_sets,total_score,
-       status,created_by,created_at,updated_at,generation_config,generation_state FROM problem_sets`
+       status,created_by,created_at,updated_at,generation_config,generation_state,owner_user_id FROM problem_sets`
 
 type problemSetRowScanner interface {
 	Scan(dest ...interface{}) error
@@ -454,7 +485,7 @@ func scanProblemSet(row problemSetRowScanner, set *domain.ProblemSet) error {
 		&set.Subject, &set.Tags, &set.StylePrompt, &set.DifficultyPrompt, &set.GeneratedPrompt,
 		&set.GeneratedPromptModel, &set.GeneratedPromptAt, &set.DesiredItemCount, &set.MinItemCount,
 		&set.MaxItemCount, &set.CooldownSets, &set.TotalScore, &set.Status, &set.CreatedBy,
-		&set.CreatedAt, &set.UpdatedAt, &set.GenerationConfig, &set.Generation)
+		&set.CreatedAt, &set.UpdatedAt, &set.GenerationConfig, &set.Generation, &set.OwnerUserID)
 }
 
 func nullableUUID(id *uuid.UUID) interface{} {

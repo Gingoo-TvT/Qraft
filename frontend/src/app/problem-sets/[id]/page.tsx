@@ -1,5 +1,7 @@
 'use client';
 
+import { downloadProblemSetTesting, parseExportTagCatalog } from '@/lib/problem-set-download';
+import { useAuth } from '@/components/auth/AuthProvider';
 import Link from 'next/link';
 import GenerationConfigFields from '@/components/problem-sets/GenerationConfigFields';
 import { defaultSetGenerationConfig, generationConfigForSet, isSetGenerationActive, SET_QUESTION_TYPES, setGenerationStatusLabel, setGenerationTotal, validateSetGenerationConfig } from '@/lib/problem-set-generation';
@@ -13,7 +15,6 @@ import {
   startProblemSetGeneration,
   getProblemSetGeneration,
   cancelProblemSetGeneration,
-  exportProblemSetURL,
   generateProblemSetPrompt,
   getProblemSet,
   listProblems,
@@ -31,15 +32,45 @@ import type {
 } from '@/lib/types';
 
 export default function ProblemSetDetailPage() {
+  const { isAdmin, session } = useAuth();
   const params = useParams<{ id: string }>();
   const id = params.id;
   const [set, setSet] = useState<ProblemSet | null>(null);
+  const canManage = isAdmin || Boolean(set?.owner_user_id && set.owner_user_id === session?.user?.id && set.visibility === 'private');
   const [loading, setLoading] = useState(true);
   const [detailTab, setDetailTab] = useState('items');
   const initialViewChosen = useRef(false);
   const [working, setWorking] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [error, setError] = useState('');
+  const [downloading, setDownloading] = useState<'generic' | 'hydro' | null>(null);
+  const [tagCatalog, setTagCatalog] = useState<{ activeTagsTree: unknown[] }>();
+  const [tagFileName, setTagFileName] = useState('');
+  const [tagCatalogError, setTagCatalogError] = useState('');
+  const [readingTags, setReadingTags] = useState(false);
+  const tagReadSequence = useRef(0);
+
+  async function selectTagCatalog(file?: File) {
+    const sequence = ++tagReadSequence.current;
+    setTagCatalog(undefined); setTagFileName(''); setTagCatalogError('');
+    if (!file) { setReadingTags(false); return; }
+    setReadingTags(true);
+    try {
+      if (file.size > 4 * 1024 * 1024) throw new Error('标签 JSON 文件最多支持 4 MiB。');
+      const parsed = parseExportTagCatalog(await file.text());
+      if (sequence === tagReadSequence.current) { setTagCatalog(parsed); setTagFileName(file.name); }
+    } catch (cause) {
+      if (sequence === tagReadSequence.current) setTagCatalogError(cause instanceof Error ? cause.message : '无法读取标签 JSON');
+    } finally { if (sequence === tagReadSequence.current) setReadingTags(false); }
+  }
+
+  async function downloadTesting(format: 'generic' | 'hydro') {
+    if (!set || downloading) return;
+    setDownloading(format); setError('');
+    try { await downloadProblemSetTesting(id, format, set.code.replace(/[^a-zA-Z0-9_-]/g, '') + '-' + format + '.zip', format === 'generic' ? tagCatalog : undefined); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : '下载失败'); }
+    finally { setDownloading(null); }
+  }
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editSubject, setEditSubject] = useState('');
@@ -55,7 +86,6 @@ export default function ProblemSetDetailPage() {
   const [sourceID, setSourceID] = useState('');
   const [score, setScore] = useState(100);
   const [section, setSection] = useState('');
-  const [allowReuse, setAllowReuse] = useState(false);
   const [availableProblems, setAvailableProblems] = useState<Problem[]>([]);
   const [availableQuizzes, setAvailableQuizzes] = useState<QuizProblem[]>([]);
   const [sourceLoading, setSourceLoading] = useState(false);
@@ -95,10 +125,11 @@ export default function ProblemSetDetailPage() {
   useEffect(() => {
     let cancelled = false;
     async function loadSources() {
+      if (!canManage) return;
       setSourceLoading(true);
       try {
         if (sourceType === 'problem') {
-          const response = await listProblems({ status: 'published', page: 1, size: 100 });
+          const response = await listProblems({ page: 1, size: 100 });
           if (!cancelled) setAvailableProblems(response.data ?? []);
         } else {
           const response = await listQuizzes({ page: 1, size: 100 });
@@ -115,12 +146,12 @@ export default function ProblemSetDetailPage() {
     }
     void loadSources();
     return () => { cancelled = true; };
-  }, [sourceType]);
+  }, [sourceType, canManage]);
 
 
   const generationActive = isSetGenerationActive(set?.generation?.status);
   useEffect(() => {
-    if (!id || !generationActive) return;
+    if (!id || !generationActive || !canManage) return;
     let cancelled = false;
     let inFlight = false;
     let loadedCount = -1;
@@ -147,11 +178,12 @@ export default function ProblemSetDetailPage() {
     void refreshProgress();
     const timer = window.setInterval(() => { void refreshProgress(); }, 3000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [id, generationActive]);
+  }, [id, generationActive, canManage]);
 
   const items = useMemo(() => set?.items ?? [], [set]);
 
   async function addItem() {
+    if (!canManage) return;
     if (!sourceID.trim()) { setError('请输入题目或客观题 UUID。'); return; }
     setWorking(true); setError('');
     const payload: ProblemSetAddItemRequest = {
@@ -169,6 +201,7 @@ export default function ProblemSetDetailPage() {
   }
 
   async function saveConfiguration(startGeneration = false) {
+    if (!canManage) return;
     if (!editTitle.trim()) { setError('题集名称不能为空。'); return; }
     const configError = validateSetGenerationConfig(editGenerationConfig);
     if (configError) { setError(configError); return; }
@@ -196,6 +229,7 @@ export default function ProblemSetDetailPage() {
   }
 
   async function stopGeneration() {
+    if (!canManage) return;
     setWorking(true); setError('');
     try { await cancelProblemSetGeneration(id); setStopRequested(true); }
     catch (cause) { setError(cause instanceof Error ? cause.message : '停止失败，请重试。'); }
@@ -203,6 +237,7 @@ export default function ProblemSetDetailPage() {
   }
 
   async function resumeQueuedGeneration() {
+    if (!canManage) return;
     setWorking(true); setError('');
     try {
       const response = await startProblemSetGeneration(id);
@@ -212,6 +247,7 @@ export default function ProblemSetDetailPage() {
   }
 
   async function moveItem(index: number, delta: number) {
+    if (!canManage) return;
     const ids = items.map((item) => item.id);
     const target = index + delta;
     if (target < 0 || target >= ids.length) return;
@@ -225,6 +261,7 @@ export default function ProblemSetDetailPage() {
   }
 
   async function removeItem(itemID: string) {
+    if (!canManage) return;
     if (!window.confirm('确定从题集中移除这道题吗？')) return;
     setWorking(true); setError('');
     try {
@@ -236,6 +273,7 @@ export default function ProblemSetDetailPage() {
   }
 
   async function regeneratePrompt() {
+    if (!canManage) return;
     setWorking(true); setError('');
     try {
       const response = await generateProblemSetPrompt(id);
@@ -248,8 +286,8 @@ export default function ProblemSetDetailPage() {
   useEffect(() => {
     if (!set || initialViewChosen.current) return;
     initialViewChosen.current = true;
-    if (isSetGenerationActive(set.generation?.status)) setDetailTab('generation');
-  }, [set]);
+    if (canManage && isSetGenerationActive(set.generation?.status)) setDetailTab('generation');
+  }, [set, canManage]);
 
   if (loading && !set) return <div className="forge-page"><p className="text-anvil-500">加载中…</p></div>;
   if (!set) return <div className="forge-page"><div className="rounded-lg bg-danger-50 p-4 text-danger-600">{error || '题集不存在'}</div></div>;
@@ -266,13 +304,27 @@ export default function ProblemSetDetailPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <button className="forge-btn-secondary" onClick={() => void load()} disabled={loading}><RefreshCw className="h-4 w-4" />刷新</button>
-          <button className="forge-btn-secondary" onClick={() => void regeneratePrompt()} disabled={working || generationActive || savingConfig}><Sparkles className="h-4 w-4" />重新生成提示词</button>
-          <a className={"forge-btn-primary" + (generationActive ? " pointer-events-none opacity-50" : "")} aria-disabled={generationActive} tabIndex={generationActive ? -1 : undefined} href={generationActive ? undefined : exportProblemSetURL(id, allowReuse)}><Download className="h-4 w-4" />下载题集 ZIP</a>
+          <button className="forge-btn-secondary" onClick={() => void regeneratePrompt()} disabled={!canManage || working || generationActive || savingConfig}><Sparkles className="h-4 w-4" />重新生成提示词</button>
+          <button className="forge-btn-primary" disabled={generationActive || !items.length || Boolean(downloading) || readingTags || Boolean(tagCatalogError)} onClick={() => void downloadTesting('generic')}>{downloading === 'generic' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}通用 ZIP</button>
+          <button className="forge-btn-secondary" disabled={generationActive || !items.length || Boolean(downloading) || items.some(item => !item.problem_id || Boolean(item.quiz_id))} onClick={() => void downloadTesting('hydro')}>{downloading === 'hydro' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Hydro ZIP</button>
         </div>
       </div>
+<p className="text-sm text-[var(--dm)]">通用 ZIP 包含模板 Excel、datas 测试数据和题集清单，可保留全部题型；Hydro ZIP 可整包导入 Hydro 编程题库。两者供 OJ 测试，不改变题目的发布状态。{items.some(item => !item.problem_id || Boolean(item.quiz_id)) && ' 当前含客观题，请下载通用 ZIP；Hydro 不支持这些题型。'}</p>
+<details className="rounded-lg border border-[var(--dl)] p-3 text-sm">
+  <summary className="cursor-pointer font-medium">通用 ZIP 标签映射{tagFileName ? '：已选择标签目录' : '（可选）'}</summary>
+  <div className="mt-3 space-y-2">
+    <p className="text-[var(--dm)]">选择目标 OJ 导出的标签 JSON。本次下载按有效 ID、完整路径或唯一名称匹配；同名和未匹配标签列在导出说明中。未选择目录时标签列留空，原标签仍保留。</p>
+    <label className="block">标签目录 JSON<input className="mt-1 block w-full" type="file" accept=".json,application/json" disabled={Boolean(downloading)} onChange={event => void selectTagCatalog(event.target.files?.[0])} /></label>
+    {readingTags && <p>正在读取标签目录…</p>}
+    {tagFileName && <p>{tagFileName} · 仅用于当前页面的下载，不保存为全局配置</p>}
+    {tagCatalogError && <p role="alert" className="text-danger-600">{tagCatalogError}</p>}
+    <p className="text-[var(--dm)]">编程题按六档 rating 区间导出，原始分数保留在清单及说明中。语言编号未确认时不限制语言。</p>
+  </div>
+</details>
+{!canManage && <p className="rounded-lg border border-[var(--dl)] p-3 text-sm text-[var(--dm)]">这是团队共享题集。你可以查看与导出；修改由管理员统一管理。</p>}
 {error && <div className="rounded-lg border border-danger-400/30 bg-danger-50 p-4 text-sm text-danger-600">{error}</div>}
       <ViewTabs id="set-content" value={detailTab} onChange={setDetailTab} items={[
-        { id: 'items', label: '题目目录（' + items.length + '）' }, { id: 'generation', label: '生成进度' },
+        { id: 'items', label: '题目目录（' + items.length + '）' }, ...(canManage ? [{ id: 'generation', label: '生成进度' }] : []),
         { id: 'settings', label: '题集需求' }, { id: 'quality', label: '质量与去重' },
       ]} />
 <ViewPanel id="set-content" name="items" active={detailTab}><div className="grid gap-4 lg:grid-cols-3">
@@ -286,23 +338,27 @@ export default function ProblemSetDetailPage() {
               <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-anvil-200 p-3 dark:border-anvil-700">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 text-xs text-anvil-400"><span>#{item.position}</span><span>{item.problem_id ? '编程题' : '客观题'}</span><span>{item.score} 分</span></div>
-                  <p className="truncate font-medium">{item.problem?.title ?? item.quiz?.title ?? item.problem_id ?? item.quiz_id}</p>
+                  <Link className="af-link font-medium" href={(item.problem_id ? '/problems/' : '/quizzes/') + (item.problem_id ?? item.quiz_id)}>{item.problem?.title ?? item.quiz?.title ?? item.problem_id ?? item.quiz_id}</Link>
+                  {item.section && <p className="mt-1 text-xs text-[var(--dm)]">{item.section}</p>}
+                  {item.notes && <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--dm)]">{item.notes}</p>}
                   {item.knowledge_point_keys && <p className="truncate text-xs text-anvil-400">{item.knowledge_point_keys.filter((key) => !key.includes(':') || !key.match(/^[^:]+:[0-9a-f-]{36}$/)).slice(0, 5).join(' · ')}</p>}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <button className="text-anvil-500 disabled:opacity-30" onClick={() => void moveItem(index, -1)} disabled={index === 0 || working || generationActive || savingConfig} aria-label={'上移第 ' + (index + 1) + ' 题'}><ArrowUp className="h-4 w-4" /></button>
-                  <button className="text-anvil-500 disabled:opacity-30" onClick={() => void moveItem(index, 1)} disabled={index === items.length - 1 || working || generationActive || savingConfig} aria-label={'下移第 ' + (index + 1) + ' 题'}><ArrowDown className="h-4 w-4" /></button>
-                  <button className="text-danger-500 hover:text-danger-600" onClick={() => void removeItem(item.id)} disabled={working || generationActive || savingConfig} aria-label="移除"><Trash2 className="h-4 w-4" /></button>
+                  <button className="text-anvil-500 disabled:opacity-30" onClick={() => void moveItem(index, -1)} disabled={!canManage || index === 0 || working || generationActive || savingConfig} aria-label={'上移第 ' + (index + 1) + ' 题'}><ArrowUp className="h-4 w-4" /></button>
+                  <button className="text-anvil-500 disabled:opacity-30" onClick={() => void moveItem(index, 1)} disabled={!canManage || index === items.length - 1 || working || generationActive || savingConfig} aria-label={'下移第 ' + (index + 1) + ' 题'}><ArrowDown className="h-4 w-4" /></button>
+                  <button className="text-danger-500 hover:text-danger-600" onClick={() => void removeItem(item.id)} disabled={!canManage || working || generationActive || savingConfig} aria-label="移除"><Trash2 className="h-4 w-4" /></button>
                 </div>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="forge-card space-y-3">
+        <section style={{ display: canManage ? undefined : "none" }} className="forge-card space-y-3">
           <h2 className="forge-section-title">加入题目</h2>
+          {!generationActive && <Link href={'/problems?set=' + id} className="forge-btn-primary w-full">打开题库，批量选题</Link>}
+          <p className="af-hint">批量选题支持搜索、分页和重复题自动跳过。下方也可单题加入。</p>
           <select className="forge-input" value={sourceType} onChange={(event) => setSourceType(event.target.value as 'problem' | 'quiz')}>
-            <option value="problem">已发布编程题</option>
+            <option value="problem">编程题</option>
             <option value="quiz">客观题</option>
           </select>
           <select
@@ -311,9 +367,9 @@ export default function ProblemSetDetailPage() {
             onChange={(event) => setSourceID(event.target.value)}
             disabled={sourceLoading || generationActive}
           >
-            <option value="">从题库选择（也可下方粘贴 UUID）</option>
+            <option value="">最近 100 题；更多题目请使用批量选题</option>
             {sourceType === 'problem'
-              ? availableProblems.map((problem) => (
+              ? availableProblems.filter(problem => !items.some(item => item.problem_id === problem.id)).map((problem) => (
                 <option key={problem.id} value={problem.id}>
                   {problem.serial_number || problem.id.slice(0, 8)} · {problem.title}
                 </option>
@@ -327,10 +383,10 @@ export default function ProblemSetDetailPage() {
             <input className="forge-input" type="number" min={0} value={score} onChange={(event) => setScore(Number(event.target.value))} placeholder="分值" />
             <input className="forge-input" value={section} onChange={(event) => setSection(event.target.value)} placeholder="分区（可选）" />
           </div>
-          <button className="forge-btn-primary w-full" onClick={() => void addItem()} disabled={working || generationActive || savingConfig}>
+          <button className="forge-btn-primary w-full" onClick={() => void addItem()} disabled={!canManage || working || generationActive || savingConfig}>
             {working ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}加入题集
           </button>
-          <p className="text-xs text-anvil-500">编程题必须已经通过发布门禁并有完整测试数据；客观题保留选择、填空与判断的答案和解析，分值随题集清单保存。</p>
+          <p className="text-xs text-anvil-500">草稿和待审题可以先编排，导出时再检查题面与测试数据。加入题集不会自动发布题目。</p>
         </section>
       </div></ViewPanel>
 <ViewPanel id="set-content" name="generation" active={detailTab}><section className="forge-card space-y-3">
@@ -340,9 +396,9 @@ export default function ProblemSetDetailPage() {
             <p className="mt-1 text-sm text-anvil-500">{set.generation ? setGenerationStatusLabel(set.generation.status) : set.generation_config?.assembly ? '本题集从已有题库组卷。缺题时可手工加入，或在确认需求后生成补齐。' : '填写下方需求并开始，系统会自动规划、生成、校验和入集。'}</p>
           </div>
           {generationActive ? <div className="flex gap-2">
-            {set.generation?.status === 'queued' && <button className="forge-btn-secondary" disabled={working} onClick={() => void resumeQueuedGeneration()}>重新提交启动</button>}
-            <button className="forge-btn-secondary" disabled={working || stopRequested} onClick={() => void stopGeneration()}>{stopRequested ? '正在停止…' : '停止生成'}</button>
-          </div> : <button className="forge-btn-primary" disabled={working || savingConfig} onClick={() => { setDetailTab('generation'); void saveConfiguration(true); }}>
+            {set.generation?.status === 'queued' && <button className="forge-btn-secondary" disabled={!canManage || working} onClick={() => void resumeQueuedGeneration()}>重新提交启动</button>}
+            <button className="forge-btn-secondary" disabled={!canManage || working || stopRequested} onClick={() => void stopGeneration()}>{stopRequested ? '正在停止…' : '停止生成'}</button>
+          </div> : <button className="forge-btn-primary" disabled={!canManage || working || savingConfig} onClick={() => { setDetailTab('generation'); void saveConfiguration(true); }}>
             {savingConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             {set.generation && set.generation.status !== 'completed' ? '保存并重试未完成题目' : set.generation_config?.assembly ? '保存需求并生成补齐' : '保存并开始生成'}
           </button>}
@@ -372,11 +428,11 @@ export default function ProblemSetDetailPage() {
             <h2 className="forge-section-title">题集配置</h2>
             <p className="mt-1 text-xs text-anvil-500">修改风格、难度或覆盖范围后，旧的内部提示词会失效。</p>
           </div>
-          <button className="forge-btn-primary" onClick={() => void saveConfiguration()} disabled={savingConfig || working || generationActive}>
+          <button className="forge-btn-primary" onClick={() => void saveConfiguration()} disabled={!canManage || savingConfig || working || generationActive}>
             {savingConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}保存配置
           </button>
         </div>
-        <fieldset disabled={generationActive || savingConfig || working} className="space-y-4 disabled:opacity-60">
+        <fieldset disabled={!canManage || generationActive || savingConfig || working} className="space-y-4 disabled:opacity-60">
         <GenerationConfigFields value={editGenerationConfig} onChange={setEditGenerationConfig} />
         <div className="grid gap-4 md:grid-cols-2">
           <label className="space-y-1 text-sm"><span>题集名称</span><input className="forge-input" value={editTitle} onChange={(event) => setEditTitle(event.target.value)} /></label>
@@ -396,8 +452,8 @@ export default function ProblemSetDetailPage() {
       </section></ViewPanel>
 <ViewPanel id="set-content" name="quality" active={detailTab}><section className="forge-card space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="forge-section-title">质量门禁与去重台账</h2>
-          {quality && <span className={quality.ready_for_export ? 'forge-badge bg-success-100 text-success-700' : 'forge-badge bg-warning-100 text-warning-700'}>{quality.ready_for_export ? '可导出' : '需处理质量门禁'}</span>}
+          <h2 className="forge-section-title">正式发布门禁与去重台账</h2>
+          {quality && <span className={quality.ready_for_export ? 'forge-badge bg-success-100 text-success-700' : 'forge-badge bg-warning-100 text-warning-700'}>{quality.ready_for_export ? '满足正式发布要求' : '正式发布前需处理'}</span>}
         </div>
         {quality ? <div className="grid gap-3 text-sm md:grid-cols-4">
           <div><span className="text-anvil-500">{set.desired_item_count > 0 ? '目标题数' : '建议题数'}</span><p className="font-semibold">{quality.recommended_item_count}（当前 {quality.item_count}）</p></div>
@@ -407,7 +463,7 @@ export default function ProblemSetDetailPage() {
         </div> : <p className="text-sm text-anvil-400">质量报告加载中…</p>}
         {quality?.blocking_issues?.map((issue) => <p key={issue} className="text-sm text-danger-600">阻塞：{issue}</p>)}
         {quality?.warnings?.map((warning) => <p key={warning} className="text-sm text-warning-600">提示：{warning}</p>)}
-        {quality && ((quality.reused_knowledge_points?.length ?? 0) > 0 || (quality.reused_items?.length ?? 0) > 0) && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={allowReuse} onChange={(event) => setAllowReuse(event.target.checked)} />本次导出明确允许复用（会记录在台账中）</label>}
+        <p className="text-xs text-anvil-500">上方 ZIP 用于 OJ 测试，按实际数据验证结果提供下载；这里的正式发布要求不会自动改变题目的状态。</p>
       </section></ViewPanel>
 
     </div>

@@ -80,7 +80,7 @@ func TestConnectionProbesActualCapabilitiesAndDoesNotFollowRedirect(t *testing.T
 					redirected = true
 					return
 				}
-				if r.URL.Path != "/api/v1/integration/capabilities" {
+				if r.URL.Path != "/api/v1/integration/capabilities" && !(tc.name == "login" && r.URL.Path == "/api/v1/auth/session") {
 					t.Errorf("path=%s", r.URL.Path)
 				}
 				w.Header().Set("Location", "/login")
@@ -94,6 +94,35 @@ func TestConnectionProbesActualCapabilitiesAndDoesNotFollowRedirect(t *testing.T
 			}
 			if redirected {
 				t.Fatal("login redirect followed as if it were a capability response")
+			}
+		})
+	}
+}
+
+func TestSharedServiceIsReachableBeforeLogin(t *testing.T) {
+	for _, mode := range []string{"shared", "local", ""} {
+		t.Run(mode, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Cookie") != "" || r.Header.Get("Authorization") != "" {
+					t.Error("connection discovery sent credentials")
+				}
+				if r.URL.Path == "/api/v1/integration/capabilities" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				if r.URL.Path != "/api/v1/auth/session" {
+					t.Fatalf("unexpected discovery %s", r.URL.Path)
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": map[string]any{"mode": mode, "authenticated": false}})
+			}))
+			defer srv.Close()
+			result, err := CheckConnection(context.Background(), srv.URL)
+			if mode == "shared" {
+				if err != nil || !result.Ready || !result.AuthRequired {
+					t.Fatalf("shared service not recognised: %+v %v", result, err)
+				}
+			} else if err == nil || result.Ready {
+				t.Fatal("unrecognised discovery enabled a service")
 			}
 		})
 	}

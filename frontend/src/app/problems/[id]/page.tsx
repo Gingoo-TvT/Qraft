@@ -1,5 +1,6 @@
 'use client';
 
+import { useAuth } from '@/components/auth/AuthProvider';
 import { useEditorTheme } from '@/hooks/useEditorTheme';
 import { ViewTabs, ViewPanel } from '@/components/ui/ViewTabs';
 
@@ -426,6 +427,7 @@ function extractWorkflowReview(value: unknown): WorkflowReviewSummary | null {
 // ---------------------------------------------------------------------------
 
 export default function ProblemDetailPage() {
+  const { isAdmin } = useAuth();
   const editorTheme = useEditorTheme();
   const [detailTab, setDetailTab] = useState('statement');
   const params = useParams();
@@ -730,16 +732,17 @@ export default function ProblemDetailPage() {
             <Download className="h-4 w-4" />
             测试数据
           </a>
-          <Link href={"/rating?problem=" + encodeURIComponent(problem.id)} className="forge-btn-secondary">题目评估</Link>
-          <Link
+          {isAdmin && <Link href={"/rating?problem=" + encodeURIComponent(problem.id)} className="forge-btn-secondary">题目评估</Link>}
+          {isAdmin && <Link
             href={`/problems/${problem.id}/edit`}
             className="forge-btn-secondary"
           >
             <Edit className="h-4 w-4" />
             编辑
-          </Link>
+          </Link>}
           <button
             className="forge-btn-secondary"
+            style={{ display: isAdmin ? undefined : 'none' }}
             onClick={handleValidate}
             disabled={validating}
           >
@@ -752,6 +755,7 @@ export default function ProblemDetailPage() {
           </button>
           <button
             className="forge-btn-danger"
+            style={{ display: isAdmin ? undefined : 'none' }}
             onClick={handleDelete}
             disabled={deleting}
           >
@@ -762,7 +766,7 @@ export default function ProblemDetailPage() {
             )}
             删除
           </button>
-          {problem.workflow_id && (
+          {isAdmin && problem.workflow_id && (
             <Link
               href={`/workflows/${problem.workflow_id}`}
               className="forge-btn-ghost"
@@ -968,7 +972,8 @@ export default function ProblemDetailPage() {
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <button
               className="forge-btn-secondary"
-              onClick={handleValidate}
+              style={{ display: isAdmin ? undefined : 'none' }}
+            onClick={handleValidate}
               disabled={validating}
             >
               {validating ? (
@@ -978,17 +983,17 @@ export default function ProblemDetailPage() {
               )}
               验证
             </button>
-            <Link
+            {isAdmin && <Link
               href={`/problems/${problem.id}/edit`}
               className="forge-btn-secondary"
             >
               <Edit className="h-4 w-4" />
               编辑
-            </Link>
+            </Link>}
           </div>
         </div>
 
-        {!gate.canExportHydro && (
+        {isAdmin && !gate.canExportHydro && (
           <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
             <input
               className="forge-input min-w-0 flex-1 font-mono text-sm"
@@ -1012,7 +1017,7 @@ export default function ProblemDetailPage() {
           </div>
         )}
 
-        {problem.status === 'quarantined' && (
+        {isAdmin && problem.status === 'quarantined' && (
           <div className="mt-4 flex flex-col gap-3 rounded border border-forge-300/60 bg-white/70 p-3 dark:border-forge-700/60 dark:bg-anvil-900/40 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="text-sm font-medium text-anvil-700 dark:text-anvil-200">

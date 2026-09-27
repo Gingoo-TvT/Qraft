@@ -274,6 +274,7 @@ func (h *EmbeddingHandler) HandleDeployLocal(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return badRequest(c, "INVALID_BODY", "failed to parse request body: "+err.Error())
 	}
+	req.Actor = editActor(c)
 	endpoint, err := h.endpointWithPersistentKey(c.Request().Context(), req.Endpoint)
 	if err != nil {
 		return internalError(c, "failed to resolve embedding runtime key: "+err.Error())
@@ -537,6 +538,7 @@ func (h *EmbeddingHandler) HandleActivateLocal(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return badRequest(c, "INVALID_BODY", "failed to parse request body: "+err.Error())
 	}
+	req.Actor = editActor(c)
 	modelVersionID, err := uuid.Parse(strings.TrimSpace(req.ModelVersionID))
 	if err != nil {
 		return badRequest(c, "INVALID_MODEL_VERSION", "model_version_id must be a UUID")

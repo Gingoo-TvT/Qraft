@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Gingoo-TvT/Qraft/backend/internal/access"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/generationapi"
 	authmw "github.com/Gingoo-TvT/Qraft/backend/internal/handler/middleware"
@@ -574,7 +575,8 @@ func (h *GenerationJobHandler) describeGenerationJob(
 		return nil, errGenerationJobNotFound
 	}
 	storedPrincipal, err := generationJobMemoString(info, generationapi.MemoPrincipalScopeKey)
-	if err != nil || storedPrincipal != principalSHA256 {
+	principal, _ := access.FromContext(ctx)
+	if err != nil || (storedPrincipal != principalSHA256 && !principal.IsAdmin()) {
 		return nil, errGenerationJobNotOwned
 	}
 	if payloadSHA256 != "" {
@@ -726,7 +728,7 @@ func decodeGenerationJobRequest(c echo.Context) (generationapi.Request, error) {
 func generationJobPrincipalScope(c echo.Context) (string, error) {
 	claims := authmw.GetClaims(c)
 	if claims == nil {
-		return "local-dev", nil
+		return "", errGenerationJobPrincipalRequired
 	}
 	if userID := strings.TrimSpace(claims.UserID); userID != "" {
 		return "user:" + userID, nil

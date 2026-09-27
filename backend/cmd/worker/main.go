@@ -210,8 +210,14 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to configure provenance retention scheduler")
 	}
 
+	// Workers persist child workflow ownership by following Temporal's
+	// server-provided parent links back to the API reservation.
+	workflowOwners := repository.NewWorkflowOwnershipRepository(dbPool)
+	workflowAccess := service.NewWorkflowAccess(temporalClient, workflowOwners)
+
 	// Initialize activity dependencies.
 	actDeps := &activities.Dependencies{
+		PersistWorkflowOwner:   workflowAccess.PersistOwner,
 		LLM:                    llmClient,
 		Embedding:              embedder,
 		MinIO:                  minioClient,
@@ -252,6 +258,7 @@ func main() {
 
 	// Reuse the product services for set planning and verified item admission.
 	setRepo := repository.NewProblemSetRepository(dbPool)
+	actDeps.ProblemSetRepo = setRepo
 	setTags := repository.NewTagRepository(dbPool)
 	setProblems := service.NewProblemService(problemRepo, testCaseRepo, setTags, runtimeVectorRepo, temporalClient, cfg.Temporal.TaskQueue)
 	setQuizzes := service.NewQuizService(quizRepo, kpRepo, temporalClient, cfg.Temporal.TaskQueue)
@@ -286,9 +293,17 @@ func main() {
 	w.RegisterWorkflow(workflow.GPLTBatchGenerationWorkflow)
 	w.RegisterWorkflow(workflow.QuizGenerationWorkflow)
 	w.RegisterWorkflow(workflow.RatingWorkflow)
+	w.RegisterWorkflow(workflow.ProblemImportWorkflow)
+	w.RegisterWorkflow(workflow.ImportedProblemWorkflow)
 
 	// Register activities.
 	acts := activities.New(actDeps)
+	w.RegisterActivity(acts.ResolveImportedProblemActivity)
+	w.RegisterActivity(acts.PrepareImportedStatementActivity)
+	w.RegisterActivity(acts.CheckImportedDuplicateActivity)
+	w.RegisterActivity(acts.PrepareImportRatingActivity)
+	w.RegisterActivity(acts.EstimateImportedDifficultyActivity)
+	w.RegisterActivity(acts.CreateImportedProblemSetActivity)
 	w.RegisterActivity(acts.RatingLoadActivity)
 	w.RegisterActivity(acts.RatingBlindSolveActivity)
 	w.RegisterActivity(acts.RatingAnalyzeActivity)

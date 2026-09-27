@@ -43,7 +43,7 @@ type ActivePointerSwitchReport struct {
 	DryRun              bool                         `json:"dry_run"`
 	Committed           bool                         `json:"committed"`
 	EmbeddingKind       string                       `json:"embedding_kind"`
-	OldModelVersionID   uuid.UUID                    `json:"old_model_version_id"`
+	OldModelVersionID   *uuid.UUID                   `json:"old_model_version_id"`
 	NewModelVersionID   uuid.UUID                    `json:"new_model_version_id"`
 	Actor               string                       `json:"actor"`
 	Reason              string                       `json:"reason"`
@@ -123,7 +123,15 @@ func (r *VectorRepository) SwitchActiveEmbeddingPointer(
 		return report, err
 	}
 	report.OldModelVersionID = oldModelVersionID
-	if options.ExpectedFromModelVersionID != nil && *options.ExpectedFromModelVersionID != oldModelVersionID {
+	if oldModelVersionID == nil {
+		if operation != EmbeddingSwitchOperationCutover {
+			return report, fmt.Errorf("cannot %s absent active embedding pointer for kind %q", operation, kind)
+		}
+		if options.ExpectedFromModelVersionID != nil {
+			return report, fmt.Errorf("active pointer expectation mismatch for %q: database=absent expected=%s", kind, *options.ExpectedFromModelVersionID)
+		}
+	}
+	if oldModelVersionID != nil && options.ExpectedFromModelVersionID != nil && *options.ExpectedFromModelVersionID != *oldModelVersionID {
 		return report, fmt.Errorf(
 			"active pointer expectation mismatch for %q: database=%s expected=%s",
 			kind,
@@ -160,14 +168,24 @@ func (r *VectorRepository) SwitchActiveEmbeddingPointer(
 		WHERE id=$1`, options.ToModelVersionID); err != nil {
 		return report, fmt.Errorf("promoting target embedding model version: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `
+	// Missing pointers have no row to lock. Use an insert, never an upsert:
+	// the unique key and serializable transaction make a concurrent initializer
+	// fail and roll back rather than silently replace the first winner.
+	pointerSQL := `
 		UPDATE embedding_active_pointers
 		SET model_version_id=$2,
 		    expected_dimensions=$3,
 		    updated_by=$4,
 		    reason=$5,
 		    updated_at=NOW()
-		WHERE embedding_kind=$1`,
+		WHERE embedding_kind=$1`
+	if oldModelVersionID == nil {
+		pointerSQL = `
+			INSERT INTO embedding_active_pointers (
+				embedding_kind, model_version_id, expected_dimensions, updated_by, reason
+			) VALUES ($1, $2, $3, $4, $5)`
+	}
+	if _, err := tx.Exec(ctx, pointerSQL,
 		kind,
 		options.ToModelVersionID,
 		targetDimensions,
@@ -177,6 +195,11 @@ func (r *VectorRepository) SwitchActiveEmbeddingPointer(
 		return report, fmt.Errorf("updating active embedding pointer: %w", err)
 	}
 
+	var oldModelVersionText *string
+	if oldModelVersionID != nil {
+		value := oldModelVersionID.String()
+		oldModelVersionText = &value
+	}
 	eventType := "embedding_active_pointer_" + operation
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO provenance_audit_events (
@@ -198,7 +221,7 @@ func (r *VectorRepository) SwitchActiveEmbeddingPointer(
 		report.Actor,
 		report.Reason,
 		kind,
-		oldModelVersionID.String(),
+		oldModelVersionText,
 		options.ToModelVersionID.String(),
 		report.DatasetReportSHA256,
 		options.ShadowReadCount,
@@ -264,7 +287,7 @@ func normalizeSwitchOperation(operation string) string {
 	}
 }
 
-func lockActivePointer(ctx context.Context, tx pgx.Tx, kind string) (uuid.UUID, error) {
+func lockActivePointer(ctx context.Context, tx pgx.Tx, kind string) (*uuid.UUID, error) {
 	var oldModelVersionID uuid.UUID
 	err := tx.QueryRow(ctx, `
 		SELECT model_version_id
@@ -272,26 +295,30 @@ func lockActivePointer(ctx context.Context, tx pgx.Tx, kind string) (uuid.UUID, 
 		WHERE embedding_kind=$1
 		FOR UPDATE`, kind).Scan(&oldModelVersionID)
 	if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
-		return uuid.Nil, fmt.Errorf("active embedding pointer for kind %q not found: %w", kind, sql.ErrNoRows)
+		return nil, nil
 	}
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("locking active embedding pointer for kind %q: %w", kind, err)
+		return nil, fmt.Errorf("locking active embedding pointer for kind %q: %w", kind, err)
 	}
-	return oldModelVersionID, nil
+	return &oldModelVersionID, nil
 }
 
 func lockTargetModelVersion(ctx context.Context, tx pgx.Tx, id uuid.UUID) (int, error) {
 	var dimensions int
+	var status string
 	err := tx.QueryRow(ctx, `
-		SELECT dimensions
+		SELECT dimensions, status
 		FROM embedding_model_versions
 		WHERE id=$1
-		FOR UPDATE`, id).Scan(&dimensions)
+		FOR UPDATE`, id).Scan(&dimensions, &status)
 	if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
 		return 0, fmt.Errorf("target embedding model version %s not found: %w", id, sql.ErrNoRows)
 	}
 	if err != nil {
 		return 0, fmt.Errorf("locking target embedding model version %s: %w", id, err)
+	}
+	if status == EmbeddingModelStatusRetired {
+		return 0, fmt.Errorf("target embedding model version %s is retired", id)
 	}
 	return dimensions, nil
 }

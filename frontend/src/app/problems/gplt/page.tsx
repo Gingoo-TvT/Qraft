@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+import { useAuth } from '@/components/auth/AuthProvider';
+import GenerationReadiness from '@/components/auth/GenerationReadiness';
 import { FormSection, PageHeader } from '@/components/ui/Workspace';
 import ApiHealthBanner from '@/components/ApiHealthBanner';
 import { useGenerateGPLTBatch } from '@/hooks/useProblems';
@@ -59,15 +61,21 @@ function runtimeConfig(
   const config: LLMRuntimeConfig = {
     model: trimmedModel || undefined,
   };
-  if (trimmedKeyInput.startsWith('env:') || trimmedKeyInput.startsWith('runtime:')) {
-    config.api_key_ref = trimmedKeyInput;
-  } else if (trimmedKeyInput) {
+  if (trimmedKeyInput) {
     config.api_key = trimmedKeyInput;
   }
   return config;
 }
 
+const EMPTY_MODEL_OVERRIDES = {
+  statement_model: '',
+  statement_api_key: '',
+  verification_model: '',
+  verification_api_key: '',
+};
+
 export default function GPLTBatchPage() {
+  const { isAdmin } = useAuth();
   const router = useRouter();
   const { generate, loading, error } = useGenerateGPLTBatch();
 
@@ -81,12 +89,13 @@ export default function GPLTBatchPage() {
     similar_limit: 3,
     custom_prompt: '',
   });
-  const [runtimeState, setRuntimeState] = useState({
-    statement_model: '',
-    statement_api_key: '',
-    verification_model: '',
-    verification_api_key: '',
-  });
+  const [runtimeState, setRuntimeState] = useState({ ...EMPTY_MODEL_OVERRIDES });
+  const [modelOverrideEnabled, setModelOverrideEnabled] = useState(false);
+
+  function toggleModelOverride(enabled: boolean) {
+    setModelOverrideEnabled(enabled);
+    setRuntimeState({ ...EMPTY_MODEL_OVERRIDES });
+  }
 
   const handleSubmit = useCallback(async () => {
     const statementConfig = runtimeConfig(
@@ -108,12 +117,12 @@ export default function GPLTBatchPage() {
     const result = await generate({
       ...formState,
       require_review: false,
-      provider_config: providerConfig,
+      provider_config: isAdmin && modelOverrideEnabled ? providerConfig : undefined,
     });
     if (result) {
       router.push(`/workflows/${result.workflow_id}`);
     }
-  }, [formState, runtimeState, generate, router]);
+  }, [formState, runtimeState, generate, router, isAdmin, modelOverrideEnabled]);
 
   const totalProblems = TIER_INFO.reduce((sum, tier) => sum + tier.count, 0);
   const totalScore = TIER_INFO.reduce((sum, tier) => sum + tier.total, 0);
@@ -123,7 +132,7 @@ export default function GPLTBatchPage() {
         actions={<Link href="/problem-sets/new?format=programming" className="forge-btn-secondary">自定义比赛编排</Link>}>
         <Link href="/problems" className="af-link inline-flex items-center gap-1"><ArrowLeft className="h-4 w-4" />返回编程题题库</Link>
       </PageHeader>
-      <ApiHealthBanner />
+      <ApiHealthBanner /><GenerationReadiness />
       {error && <div role="alert" className="rounded-lg border border-danger-400/30 bg-danger-50 p-4 text-sm text-danger-600 dark:bg-danger-500/10 dark:text-danger-400">{error}</div>}
       <form className="af-form-layout" onSubmit={(event) => { event.preventDefault(); if (!loading) void handleSubmit(); }}>
         <div className="af-form-main">
@@ -140,16 +149,17 @@ export default function GPLTBatchPage() {
             </div>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={formState.generate_editorial} onChange={(event) => setFormState((current) => ({ ...current, generate_editorial: event.target.checked }))} />为每道题生成题解</label>
           </FormSection>
-          <details className="af-form-details">
+          {isAdmin && <details className="af-form-details">
             <summary><strong>本次模型覆盖</strong><span className="af-hint">题面生成与验算模型、API Key</span></summary>
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><p className="af-hint">全部留空时使用已保存的默认模型；这里只影响本次生成。</p><Link className="af-link text-sm" href="/settings">管理模型配置</Link></div>
-            <div className="grid gap-6 sm:grid-cols-2">{(['statement', 'verification'] as const).map((role) => <div key={role} className="space-y-3"><h3 className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="h-4 w-4 text-[var(--da)]" />{role === 'statement' ? '题面生成' : '验算'}</h3>{(['model', 'api_key'] as const).map((field) => { const name = `${role}_${field}` as const; return <label key={field} className="af-field"><span>{field === 'model' ? '模型' : 'API Key'}</span><input className="forge-input" type={field === 'api_key' ? 'password' : 'text'} autoComplete={field === 'api_key' ? 'off' : undefined} value={runtimeState[name]} onChange={(event) => setRuntimeState((current) => ({ ...current, [name]: event.target.value }))} placeholder={field === 'model' ? '默认模型' : role === 'statement' ? 'sk-... 或 env:ALGOFORGE_STATEMENT_LLM_KEY' : 'sk-... 或 env:ALGOFORGE_REVIEW_LLM_KEY'} /></label>; })}</div>)}</div>
-          </details>
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><p className="af-hint">默认使用管理员已保存的模型。主动开启后，下面的值仅影响本次调用。</p><Link className="af-link text-sm" href="/settings">管理模型配置</Link></div>
+            <label className="mb-5 flex items-center gap-2 text-sm"><input id="model-override-enabled" name="qraft-enable-model-override" type="checkbox" checked={modelOverrideEnabled} onChange={(event) => toggleModelOverride(event.target.checked)} />启用本次模型覆盖</label>
+            {modelOverrideEnabled && <div className="grid gap-6 sm:grid-cols-2">{(['statement', 'verification'] as const).map((role) => <div key={role} className="space-y-3"><h3 className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="h-4 w-4 text-[var(--da)]" />{role === 'statement' ? '题面生成' : '验算'}</h3>{(['model', 'api_key'] as const).map((field) => { const name = `${role}_${field}` as const; return <label key={field} className="af-field"><span>{field === 'model' ? '模型' : 'API Key'}</span><input className="forge-input" type={field === 'api_key' ? 'password' : 'text'} pattern={field === 'api_key' ? '(?!env:|runtime:).*' : undefined} title={field === 'api_key' ? '请输入实际 API Key，不支持 env: 或 runtime: 引用' : undefined} name={`qraft-override-${role}-${field}`} autoComplete={field === 'api_key' ? 'new-password' : 'off'} value={runtimeState[name]} onChange={(event) => setRuntimeState((current) => ({ ...current, [name]: event.target.value }))} placeholder={field === 'model' ? '默认模型' : role === 'statement' ? 'API Key（不接受服务端环境引用）' : 'API Key（不接受服务端环境引用）'} /></label>; })}</div>)}</div>}
+          </details>}
         </div>
         <aside className="af-form-rail"><div className="af-summary">
           <div><p className="af-hint">本次套题</p><h2 className="mt-2 text-lg font-semibold">天梯赛 · L1 / L2 / L3</h2></div>
           <div className="grid grid-cols-2 gap-4 border-y border-[var(--dl)] py-5"><div><strong className="text-3xl font-semibold tabular-nums">{totalProblems}</strong><p className="af-hint mt-1">道题目</p></div><div><strong className="text-3xl font-semibold tabular-nums">{totalScore}</strong><p className="af-hint mt-1">总分</p></div></div>
-          <dl className="space-y-3 text-sm"><div className="af-summary-row"><dt>默认限制</dt><dd>{formState.time_limit} ms / {formState.memory_limit} MB</dd></div><div className="af-summary-row"><dt>解法语言</dt><dd>{formState.languages[0] === 'cpp' ? 'C++' : formState.languages[0] === 'python3' ? 'Python 3' : formState.languages[0] === 'java' ? 'Java' : formState.languages[0]}</dd></div><div className="af-summary-row"><dt>题解</dt><dd>{formState.generate_editorial ? '生成' : '不生成'}</dd></div><div className="af-summary-row"><dt>题面模型</dt><dd>{runtimeState.statement_model || '默认模型'}</dd></div><div className="af-summary-row"><dt>验算模型</dt><dd>{runtimeState.verification_model || '默认模型'}</dd></div></dl>
+          <dl className="space-y-3 text-sm"><div className="af-summary-row"><dt>默认限制</dt><dd>{formState.time_limit} ms / {formState.memory_limit} MB</dd></div><div className="af-summary-row"><dt>解法语言</dt><dd>{formState.languages[0] === 'cpp' ? 'C++' : formState.languages[0] === 'python3' ? 'Python 3' : formState.languages[0] === 'java' ? 'Java' : formState.languages[0]}</dd></div><div className="af-summary-row"><dt>题解</dt><dd>{formState.generate_editorial ? '生成' : '不生成'}</dd></div><div className="af-summary-row"><dt>题面模型</dt><dd>{modelOverrideEnabled && runtimeState.statement_model || '默认模型'}</dd></div><div className="af-summary-row"><dt>验算模型</dt><dd>{modelOverrideEnabled && runtimeState.verification_model || '默认模型'}</dd></div></dl>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={(formState.similar_limit ?? 0) > 0} onChange={() => setFormState((current) => ({ ...current, similar_limit: (current.similar_limit ?? 0) > 0 ? 0 : 3 }))} />开启每题相似检测</label>
           <div className="af-sticky-actions"><button type="submit" className="forge-btn-primary w-full" disabled={loading}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{loading ? '正在启动工作流…' : `生成 ${totalProblems} 道天梯赛题目`}</button><Link className="forge-btn-secondary w-full" href="/problems">返回题库</Link></div>
           <p className="af-hint">启动后进入任务详情。生成在后台继续，耗时取决于模型响应与实际校验结果。</p>

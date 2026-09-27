@@ -156,7 +156,7 @@ func TestRunSandboxReportsOutputLimitForOLE(t *testing.T) {
 		}, nil
 	}}
 	restoreRemoteFactory(t, fake)
-	result, err := New(&Dependencies{}).RunSandboxActivity(context.Background(), domain.Solution{Language: "cpp", SourceCode: "x"}, []TestCaseData{{Input: "x"}}, ExecutionLimits{TimeLimitMs: 1000, MemoryLimitMB: 256})
+	result, err := New(&Dependencies{}).RunSandboxActivity(context.Background(), domain.Solution{Language: "cpp", SourceCode: "x"}, []TestCaseData{{Input: "x"}}, ExecutionLimits{TimeLimitMs: 1000, MemoryLimitMB: 256, OutputLimitBytes: 2 << 20})
 	if err == nil || result != nil || !strings.Contains(err.Error(), "output limit exceeded") || !strings.Contains(err.Error(), "2097152 bytes") {
 		t.Fatalf("expected explicit OLE diagnostic, result=%+v err=%v", result, err)
 	}

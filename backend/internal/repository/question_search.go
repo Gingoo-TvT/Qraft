@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Gingoo-TvT/Qraft/backend/internal/access"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -89,6 +90,10 @@ func (r *QuestionSearchRepository) Search(ctx context.Context, filter domain.Que
 	}
 	var data []byte
 	query := questionSearchQuery
+	if principal, ok := access.FromContext(ctx); ok && !principal.IsAdmin() {
+		query = strings.Replace(query, "WHERE p.status NOT IN", "WHERE p.status = 'published' AND p.status NOT IN", 1)
+		query = strings.Replace(query, "WHERE q.type IN", "WHERE q.visibility = 'public' AND q.type IN", 1)
+	}
 	var limit any = filter.Size
 	offset := (filter.Page - 1) * filter.Size
 	if filter.RatingBasis == "official" {

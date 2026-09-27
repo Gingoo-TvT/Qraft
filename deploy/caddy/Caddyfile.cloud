@@ -1,0 +1,58 @@
+{
+	admin off
+	# IP-address clients omit SNI; select the configured site certificate.
+	default_sni {$QRAFT_PUBLIC_HOST}
+}
+
+https://{$QRAFT_PUBLIC_HOST} {
+	# Explicit ACME issuer also supports public IPv4 certificates, which need
+	# Let's Encrypt's shortlived profile. Caddy renews them automatically.
+	tls {
+		issuer acme {
+			dir {$QRAFT_ACME_DIRECTORY:https://acme-v02.api.letsencrypt.org/directory}
+			profile shortlived
+		}
+	}
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+	@internal path /temporal /temporal/*
+	respond @internal 404
+
+	handle /health {
+		reverse_proxy api:8080
+	}
+	handle /api/* {
+		reverse_proxy api:8080 {
+			header_up X-Real-IP {remote_host}
+			# Stream cancellation/revocation remains controlled by the API.
+			flush_interval -1
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 180s
+			}
+		}
+	}
+	handle {
+		reverse_proxy frontend:3000
+	}
+	encode gzip
+	# Do not log account invitation/review token request headers.
+	log {
+		format filter {
+			wrap json
+			fields {
+				request>headers>X-Qraft-Invitation-Token delete
+				request>headers>X-Qraft-Review-Token delete
+				request>headers>X-Csrf-Token delete
+				request>uri query {
+					replace token REDACTED
+				}
+			}
+		}
+	}
+}

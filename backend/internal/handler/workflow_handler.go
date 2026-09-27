@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
+	"github.com/Gingoo-TvT/Qraft/backend/internal/service"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
@@ -32,6 +34,7 @@ import (
 type WorkflowHandler struct {
 	temporalClient client.Client
 	namespace      string
+	permissions    *service.WorkflowAccess
 }
 
 const (
@@ -51,6 +54,21 @@ type reviewDecisionRequest struct {
 // client.
 func NewWorkflowHandler(tc client.Client, namespace string) *WorkflowHandler {
 	return &WorkflowHandler{temporalClient: tc, namespace: namespace}
+}
+
+func (h *WorkflowHandler) SetWorkflowAccess(a *service.WorkflowAccess) { h.permissions = a }
+func (h *WorkflowHandler) authorize(c echo.Context, id string) error {
+	if h.permissions == nil {
+		return nil
+	}
+	allowed, err := h.permissions.CanAccess(c.Request().Context(), id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "workflow access is unavailable")
+	}
+	if !allowed {
+		return echo.NewHTTPError(http.StatusNotFound, "workflow not found")
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -74,42 +92,75 @@ func (h *WorkflowHandler) HandleList(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// Build a visibility query to find AlgoForge workflows.
-	query := `(WorkflowType = "ProblemGenerationWorkflow" OR WorkflowType = "ProblemValidationWorkflow" OR WorkflowType = "GPLTBatchGenerationWorkflow" OR WorkflowType = "QuizGenerationWorkflow" OR WorkflowType = "RatingWorkflow")`
+	query := `(WorkflowType = "ProblemGenerationWorkflow" OR WorkflowType = "ProblemValidationWorkflow" OR WorkflowType = "GPLTBatchGenerationWorkflow" OR WorkflowType = "QuizGenerationWorkflow" OR WorkflowType = "RatingWorkflow" OR WorkflowType = "ProblemSetGenerationWorkflow" OR WorkflowType = "S5MicroBatchWorkflowV1" OR WorkflowType = "ProblemImportWorkflow" OR WorkflowType = "ImportedProblemWorkflow")`
 	if status := c.QueryParam("status"); status != "" {
 		query += fmt.Sprintf(` AND ExecutionStatus = "%s"`, mapStatusFilter(status))
 	}
 
 	limit := intQueryParam(c, "size", 20)
-
-	request := &workflowservice.ListWorkflowExecutionsRequest{
-		Namespace: h.namespace,
-		Query:     query,
-		PageSize:  int32(limit),
+	if limit < 1 || limit > 100 {
+		limit = 20
 	}
 
-	resp, err := h.temporalClient.ListWorkflow(ctx, request)
+	token := c.QueryParam("cursor")
+	if len(token) > 16384 {
+		return badRequest(c, "INVALID_CURSOR", "分页位置无效，请返回第一页")
+	}
+	cursor, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to list workflows")
-		return internalError(c, "failed to list workflows")
+		return badRequest(c, "INVALID_CURSOR", "分页位置无效，请返回第一页")
+	}
+	request := &workflowservice.ListWorkflowExecutionsRequest{
+		NextPageToken: cursor,
+		Namespace:     h.namespace,
+		Query:         query,
+		PageSize:      int32(limit),
 	}
 
-	summaries := make([]workflowSummary, 0, len(resp.Executions))
-	for _, exec := range resp.Executions {
-		ws := workflowSummary{
-			WorkflowID: exec.Execution.WorkflowId,
-			RunID:      exec.Execution.RunId,
-			Status:     exec.Status.String(),
+	summaries := make([]workflowSummary, 0, limit)
+	// Visibility does not carry application roles. Walk bounded pages so other
+	// members' newer tasks do not hide this member's recent tasks.
+	for pages := 0; pages < 50 && len(summaries) < limit; pages++ {
+		// Request only the unfilled capacity, so permission filtering never drops
+		// a visible execution while advancing the server's continuation token.
+		request.PageSize = int32(limit - len(summaries))
+		resp, err := h.temporalClient.ListWorkflow(ctx, request)
+		if err != nil {
+			log.Error().Err(err).Msg("failed to list workflows")
+			return internalError(c, "failed to list workflows")
 		}
-		if exec.StartTime != nil {
-			ws.StartTime = exec.StartTime.AsTime().Format(time.RFC3339)
+		for _, exec := range resp.Executions {
+			if exec.GetExecution() == nil {
+				continue
+			}
+			if h.permissions != nil {
+				allowed, e := h.permissions.CanAccess(ctx, exec.GetExecution().GetWorkflowId())
+				if e != nil {
+					return serviceUnavailable(c, "workflow access is unavailable")
+				}
+				if !allowed {
+					continue
+				}
+			}
+			ws := workflowSummary{WorkflowID: exec.Execution.WorkflowId, RunID: exec.Execution.RunId, Status: exec.Status.String()}
+			if exec.StartTime != nil {
+				ws.StartTime = exec.StartTime.AsTime().Format(time.RFC3339)
+			}
+			if exec.CloseTime != nil {
+				ws.CloseTime = exec.CloseTime.AsTime().Format(time.RFC3339)
+			}
+			summaries = append(summaries, ws)
+			if len(summaries) >= limit {
+				break
+			}
 		}
-		if exec.CloseTime != nil {
-			ws.CloseTime = exec.CloseTime.AsTime().Format(time.RFC3339)
+		request.NextPageToken = resp.NextPageToken
+		if len(resp.NextPageToken) == 0 {
+			break
 		}
-		summaries = append(summaries, ws)
 	}
 
-	return ok(c, summaries)
+	return okWithMeta(c, summaries, &Meta{Size: limit, NextPageToken: base64.RawURLEncoding.EncodeToString(request.NextPageToken)})
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +170,9 @@ func (h *WorkflowHandler) HandleList(c echo.Context) error {
 // HandleGet returns the details of a single workflow, including its current
 // state. The workflow ID is the Temporal workflow ID (not the run ID).
 func (h *WorkflowHandler) HandleGet(c echo.Context) error {
+	if err := h.authorize(c, c.Param("id")); err != nil {
+		return err
+	}
 	workflowID := c.Param("id")
 	if workflowID == "" {
 		return badRequest(c, "MISSING_PARAM", "workflow id is required")
@@ -148,7 +202,7 @@ func (h *WorkflowHandler) HandleGet(c echo.Context) error {
 
 	if info.Status == enums.WORKFLOW_EXECUTION_STATUS_RUNNING &&
 		(info.GetType().GetName() == problemGenerationWorkflowType ||
-			info.GetType().GetName() == problemValidationWorkflowType || info.GetType().GetName() == "RatingWorkflow") {
+			info.GetType().GetName() == problemValidationWorkflowType || info.GetType().GetName() == "RatingWorkflow" || info.GetType().GetName() == "ImportedProblemWorkflow") {
 		queryState, err := h.queryWorkflowState(ctx, workflowID, info.Execution.RunId)
 		if err != nil {
 			// Older validation runs were created before the state query was
@@ -173,6 +227,16 @@ func (h *WorkflowHandler) HandleGet(c echo.Context) error {
 	if info.Status == enums.WORKFLOW_EXECUTION_STATUS_COMPLETED {
 		run := h.temporalClient.GetWorkflow(ctx, workflowID, "")
 		var state domain.WorkflowState
+		if info.GetType().GetName() == "ImportedProblemWorkflow" {
+			var imported domain.ProblemImportItemResult
+			if err := run.Get(ctx, &imported); err == nil {
+				state = domain.WorkflowState{ProblemID: imported.ProblemID, Status: domain.WorkflowStatusCompleted, CurrentStep: domain.StepStore, Progress: 100}
+				result["execution_status"] = info.Status.String()
+				result["state"] = state
+				result["import_result"] = imported
+			}
+			return ok(c, result)
+		}
 		if err := run.Get(ctx, &state); err == nil {
 			result["execution_status"] = info.Status.String()
 			if state.Status == domain.WorkflowStatusRejectedQuarantined {
@@ -209,6 +273,9 @@ func (h *WorkflowHandler) HandleGet(c echo.Context) error {
 // client disconnects. Events are derived from Temporal history so that the
 // frontend can display step-level progress.
 func (h *WorkflowHandler) HandleEvents(c echo.Context) error {
+	if err := h.authorize(c, c.Param("id")); err != nil {
+		return err
+	}
 	workflowID := c.Param("id")
 	if workflowID == "" {
 		return badRequest(c, "MISSING_PARAM", "workflow id is required")
@@ -331,6 +398,9 @@ func (h *WorkflowHandler) HandleEvents(c echo.Context) error {
 // HandleApprove sends an approval signal to a workflow that is waiting for
 // human review. An optional feedback field can be included in the request body.
 func (h *WorkflowHandler) HandleApprove(c echo.Context) error {
+	if err := h.authorize(c, c.Param("id")); err != nil {
+		return err
+	}
 	workflowID := c.Param("id")
 	if workflowID == "" {
 		return badRequest(c, "MISSING_PARAM", "workflow id is required")
@@ -355,6 +425,9 @@ func (h *WorkflowHandler) HandleApprove(c echo.Context) error {
 // HandleReject sends a rejection signal to a workflow that is waiting for
 // human review. A feedback field explaining the rejection reason is required.
 func (h *WorkflowHandler) HandleReject(c echo.Context) error {
+	if err := h.authorize(c, c.Param("id")); err != nil {
+		return err
+	}
 	workflowID := c.Param("id")
 	if workflowID == "" {
 		return badRequest(c, "MISSING_PARAM", "workflow id is required")
@@ -607,6 +680,9 @@ func reviewAcknowledgementError(c echo.Context, workflowID string, err error) er
 // HandleRetry resets an unsuccessful workflow to its first completed workflow
 // task. Temporal reuses the original input and creates a real new run.
 func (h *WorkflowHandler) HandleRetry(c echo.Context) error {
+	if err := h.authorize(c, c.Param("id")); err != nil {
+		return err
+	}
 	workflowID := c.Param("id")
 	if workflowID == "" {
 		return badRequest(c, "MISSING_PARAM", "workflow id is required")
@@ -646,6 +722,8 @@ func (h *WorkflowHandler) HandleRetry(c echo.Context) error {
 		enums.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT,
 	)
 	var resetEventID int64
+	importedRetry := info.GetType().GetName() == "ImportedProblemWorkflow"
+	var importHistory []*historypb.HistoryEvent
 	for history.HasNext() {
 		event, historyErr := history.Next()
 		if historyErr != nil {
@@ -655,9 +733,20 @@ func (h *WorkflowHandler) HandleRetry(c echo.Context) error {
 				Msg("failed to read workflow history for retry")
 			return internalError(c, "failed to read workflow history before retry")
 		}
+		if importedRetry {
+			importHistory = append(importHistory, event)
+			continue
+		}
 		if event.GetEventType() == enums.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
 			resetEventID = event.GetEventId()
 			break
+		}
+	}
+	if importedRetry {
+		var selectErr error
+		resetEventID, selectErr = importedProblemResetPoint(importHistory)
+		if selectErr != nil {
+			return conflict(c, selectErr.Error())
 		}
 	}
 	if resetEventID == 0 {
@@ -725,6 +814,9 @@ func (h *WorkflowHandler) workflowRetryError(c echo.Context, workflowID, runID s
 
 // HandleCancel terminates a running workflow.
 func (h *WorkflowHandler) HandleCancel(c echo.Context) error {
+	if err := h.authorize(c, c.Param("id")); err != nil {
+		return err
+	}
 	workflowID := c.Param("id")
 	if workflowID == "" {
 		return badRequest(c, "MISSING_PARAM", "workflow id is required")
@@ -981,4 +1073,83 @@ func mapStatusFilter(status string) string {
 	default:
 		return status
 	}
+}
+
+// Imported problems have immutable source text and may already own a partial
+// Store operation. Restarting at the first task would regenerate its artifacts
+// and conflict with that stable store identity. Reset only the failed activity's
+// scheduling task, keeping all preceding activity results in the history.
+func importedProblemResetPoint(events []*historypb.HistoryEvent) (int64, error) {
+	type scheduledActivity struct {
+		eventID, taskID, completedID int64
+		name                         string
+	}
+	tasks := map[int64]enums.EventType{}
+	scheduled := map[int64]*scheduledActivity{}
+	var firstCompleted int64
+	var last, store *scheduledActivity
+	for _, event := range events {
+		switch event.GetEventType() {
+		case enums.EVENT_TYPE_WORKFLOW_TASK_COMPLETED, enums.EVENT_TYPE_WORKFLOW_TASK_STARTED, enums.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT, enums.EVENT_TYPE_WORKFLOW_TASK_FAILED:
+			tasks[event.GetEventId()] = event.GetEventType()
+			if event.GetEventType() == enums.EVENT_TYPE_WORKFLOW_TASK_COMPLETED && firstCompleted == 0 {
+				firstCompleted = event.GetEventId()
+			}
+		case enums.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
+			attrs := event.GetActivityTaskScheduledEventAttributes()
+			if attrs == nil {
+				continue
+			}
+			item := &scheduledActivity{eventID: event.GetEventId(), taskID: attrs.GetWorkflowTaskCompletedEventId(), name: attrs.GetActivityType().GetName()}
+			scheduled[item.eventID] = item
+			last = item
+			if item.name == "StoreProblemActivity" {
+				store = item
+			}
+		case enums.EVENT_TYPE_ACTIVITY_TASK_COMPLETED:
+			attrs := event.GetActivityTaskCompletedEventAttributes()
+			if attrs != nil {
+				if item := scheduled[attrs.GetScheduledEventId()]; item != nil {
+					item.completedID = event.GetEventId()
+				}
+			}
+		}
+	}
+	schedulingPoint := func(item *scheduledActivity) (int64, error) {
+		if item.taskID <= 0 || item.taskID >= item.eventID || tasks[item.taskID] != enums.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
+			return 0, fmt.Errorf("导入历史缺少活动的安全重置点，未重新执行任何活动")
+		}
+		return item.taskID, nil
+	}
+	afterCompletion := func(completedID int64) int64 {
+		for _, event := range events {
+			if event.GetEventId() > completedID {
+				if _, ok := tasks[event.GetEventId()]; ok {
+					return event.GetEventId()
+				}
+			}
+		}
+		return 0
+	}
+	if store != nil {
+		if store.completedID == 0 {
+			return schedulingPoint(store)
+		}
+		if point := afterCompletion(store.completedID); point != 0 {
+			return point, nil
+		}
+		return 0, fmt.Errorf("原题和数据已保存，但没有保留该结果的安全重置点；请在题库查看，未重新生成或覆盖")
+	}
+	if last != nil {
+		if last.completedID != 0 {
+			if point := afterCompletion(last.completedID); point != 0 {
+				return point, nil
+			}
+		}
+		return schedulingPoint(last)
+	}
+	if firstCompleted != 0 {
+		return firstCompleted, nil
+	}
+	return 0, fmt.Errorf("导入任务没有可用的工作流重置点")
 }

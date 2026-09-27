@@ -13,9 +13,9 @@ import (
 
 const Version = "algoforge.testdata.v1"
 const MaxCodeBytes = 64 << 10
-const MaxCaseBytes int64 = 8 << 20
+const MaxCaseBytes int64 = 32 << 20
 const MaxTotalBytes int64 = 32 << 20
-const DefaultCaseBytes int64 = 1 << 20
+const DefaultCaseBytes int64 = 8 << 20
 const MaxCases = 32
 
 //go:embed generator.hpp
@@ -65,12 +65,14 @@ func Seed(source string, index, group int) int64 {
 	return seed
 }
 
-// BatchSize bounds worst-case JSON escaping below the 64 MiB transport limit.
+// BatchSize groups small cases within an 8 MiB raw-output budget. Larger
+// text inputs run alone; the sandbox still checks the actual encoded response
+// against its independent 64 MiB transport ceiling.
 func BatchSize(outputLimit int64) (int, error) {
 	if outputLimit <= 0 || outputLimit > MaxCaseBytes {
 		return 0, fmt.Errorf("output_limit_bytes must be in [1,%d]", MaxCaseBytes)
 	}
-	n := int(MaxCaseBytes / outputLimit)
+	n := max(1, int(DefaultCaseBytes/outputLimit))
 	if n > MaxCases {
 		n = MaxCases
 	}
@@ -108,6 +110,8 @@ Reusable generation framework (preferred):
   void generate(long long test_index, long long group_id, af::Random& rng, std::ostream& out)
 - The server supplies C++20, the library and main(). Do not emit main(), testlib.h,
   registerGen(), local-file dependencies or an #include for the framework.
+- Qualify standard C++ names explicitly, e.g. std::string and std::vector<int>.
+  The framework does not inject using namespace std; include other headers if needed.
 - Library API (integer intervals inclusive; vertices 1-based):
   rng.integer(lo,hi); rng.array(n,lo,hi); rng.distinct(n,lo,hi);
   rng.permutation(n); rng.shuffle(vector); rng.text(n,alphabet);
@@ -125,8 +129,13 @@ Reusable generation framework (preferred):
   Uniform random data alone is insufficient. Coverage descriptions are intentions,
   never evidence that a property was checked.
 - Keep case-index branches aligned with test_cases, including inline samples.
-- Set output_limit_bytes per case when needed (default 1048576, max 8388608).
-  Final input bytes must obey the existing total size and case-count contract.
+- Each case defaults to 8388608 bytes (8 MiB). For a larger legal input, declare
+  output_limit_bytes up to 33554432 bytes (32 MiB); it will run alone. Estimate
+  decimal digits and separators before choosing this budget. Preserve maximum
+  problem dimensions; never clip or truncate a generated input to fit a budget.
+  Set a smaller output_limit_bytes for known small cases to enable efficient batching.
+  All final inputs combined must fit 33554432 bytes (32 MiB). Do not repeat
+  maximum-size data in every case; retain maximum coverage and vary smaller adversaries.
 - Legacy generator_code is accepted and must be a self-contained C++20 program
   reading test_index group_id seed from stdin.
   Use either generator_recipe or generator_code; never both.

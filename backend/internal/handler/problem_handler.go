@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Gingoo-TvT/Qraft/backend/internal/access"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 	authmw "github.com/Gingoo-TvT/Qraft/backend/internal/handler/middleware"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/llm"
@@ -173,8 +174,11 @@ func (h *ProblemHandler) HandleGPLTGenerate(c echo.Context) error {
 // page, size.
 func (h *ProblemHandler) HandleList(c echo.Context) error {
 	filter := service.ListProblemsFilter{
-		Page:     intQueryParam(c, "page", 1),
-		PageSize: intQueryParam(c, "size", 20),
+		Search:    strings.TrimSpace(c.QueryParam("search")),
+		SortBy:    c.QueryParam("sort_by"),
+		SortOrder: c.QueryParam("sort_order"),
+		Page:      intQueryParam(c, "page", 1),
+		PageSize:  intQueryParam(c, "size", 20),
 	}
 
 	if level := c.QueryParam("level"); level != "" {
@@ -251,9 +255,7 @@ func (h *ProblemHandler) HandleUpdate(c echo.Context) error {
 	if err != nil {
 		return badRequest(c, "INVALID_BODY", "failed to parse request body: "+err.Error())
 	}
-	if input.Actor == "" {
-		input.Actor = editActor(c)
-	}
+	input.Actor = editActor(c)
 
 	problem, err := h.problemService.UpdateProblem(c.Request().Context(), id, input)
 	if err != nil {
@@ -289,9 +291,7 @@ func (h *ProblemHandler) HandleCompleteEditRefresh(c echo.Context) error {
 	if err != nil {
 		return badRequest(c, "INVALID_BODY", "failed to parse request body: "+err.Error())
 	}
-	if input.Actor == "" {
-		input.Actor = editActor(c)
-	}
+	input.Actor = editActor(c)
 
 	report, err := h.problemService.CompleteProblemEditRefresh(c.Request().Context(), id, input)
 	if err != nil {
@@ -821,6 +821,9 @@ func (h *ProblemHandler) HandleFindSimilar(c echo.Context) error {
 		return badRequest(c, "INVALID_PARAM", "problem_id must be a valid UUID")
 	}
 
+	if _, err := h.problemService.GetProblem(c.Request().Context(), problemID); err != nil {
+		return notFound(c, "problem not found")
+	}
 	limit := intQueryParam(c, "limit", 10)
 
 	problems, scores, err := h.problemService.FindSimilarByProblemID(c.Request().Context(), problemID, limit)
@@ -980,8 +983,8 @@ func parseProblemEditRefreshRequest(reader io.Reader) (service.ProblemEditRefres
 }
 
 func editActor(c echo.Context) string {
-	if actor := strings.TrimSpace(c.Request().Header.Get("X-Actor")); actor != "" {
-		return actor
+	if claims := authmw.GetClaims(c); claims != nil && claims.UserID != "" {
+		return claims.UserID
 	}
 	return "api"
 }
@@ -1025,6 +1028,9 @@ func (h *ProblemHandler) applyPermanentProviderConfig(
 	ctx context.Context,
 	configRef **domain.ProviderRuntimeConfig,
 ) error {
+	if err := validateRequestProviderConfig(ctx, *configRef); err != nil {
+		return err
+	}
 	if h == nil || h.providerConfig == nil || !h.modelRoutingEnabled {
 		return nil
 	}
@@ -1225,5 +1231,23 @@ func (h *ProblemHandler) prepareLLMRuntimeConfig(ctx context.Context, path strin
 	}
 	cfg.APIKey = ""
 	cfg.APIKeyRef = ref
+	return nil
+}
+
+// validateRequestProviderConfig runs before server defaults or runtime key
+// references are added. Only server-resolved configuration may carry key refs.
+func validateRequestProviderConfig(ctx context.Context, cfg *domain.ProviderRuntimeConfig) error {
+	principal, authenticated := access.FromContext(ctx)
+	if cfg == nil || !authenticated {
+		return nil
+	}
+	if !principal.IsAdmin() {
+		return fmt.Errorf("validation: members use the administrator's saved model configuration")
+	}
+	for _, item := range []*domain.LLMRuntimeConfig{cfg.Statement, cfg.Verification, cfg.Review} {
+		if item != nil && strings.TrimSpace(item.APIKeyRef) != "" {
+			return fmt.Errorf("validation: request api_key_ref is not permitted; configure the model in settings")
+		}
+	}
 	return nil
 }

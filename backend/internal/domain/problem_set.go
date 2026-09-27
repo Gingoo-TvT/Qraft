@@ -55,6 +55,7 @@ func (s ProblemSetStatus) IsValid() bool {
 // MaxItemCount remain only as a compatibility representation for records
 // created by the old 10-20 range UI.
 type ProblemSet struct {
+	OwnerUserID          string                      `json:"owner_user_id,omitempty"`
 	ID                   uuid.UUID                   `json:"id"`
 	Code                 string                      `json:"code"`
 	Title                string                      `json:"title"`

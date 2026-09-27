@@ -2,7 +2,9 @@
 
 Qraft 可以导出普通编程题的 Hydro 包。你可以从题目详情下载，也可以通过 API 获取、预检后上传到自己的 Hydro 服务。
 
-默认服务入口为 `http://localhost:18180/api/v1`。使用远程部署时替换地址，并按管理员配置的网关要求附加凭据。Qraft 本身是共享工作区，不提供内置用户登录或租户隔离。
+默认服务入口为 `http://localhost:18180/api/v1`。当前源码的共享服务先用受邀账号登录取得 HttpOnly Cookie 会话，写请求额外发送 X-CSRF-Token。成员只能查询自己的生成任务及导出有权访问的共享内容；管理员可操作全局内容。详见[账号 API](api-reference.md#账号会话)。V2.2.0 后端发行包尚不包含账号模块，必须升级配套源码。
+
+本期不提供长期机器 Token；自动化使用专用受邀账号与短期会话。下列 curl 示例省略登录步骤：共享服务应附加 -b cookie-jar，POST 再附加 X-CSRF-Token。Cookie jar 只存本机私密临时目录，完成后退出会话并删除文件。
 
 ## 单题流程
 
@@ -67,7 +69,7 @@ curl 'http://localhost:18180/api/v1/problems/hydro.zip?ids=550e8400-e29b-41d4-a7
 | 题面、problem.yaml、config.yaml | 每个文本文件最大 2 MiB |
 | 单题、批量下载 | 可重试；建议至少 120 秒客户端超时 |
 | 预检上传 | 无落库副作用，可用相同 ZIP 重试 |
-| 生成 Job | 同一共享主体、Idempotency-Key 和规范化请求复用同一任务 |
+| 生成 Job | 同一账号、Idempotency-Key 和规范化请求复用同一任务 |
 | 重新验算 | `POST /problems/:id/validate` 每次启动新工作流，不是幂等调用 |
 
 生成和验算为异步操作，应该轮询任务状态，而不是等待一次 HTTP 请求完成所有模型调用。新客户端可先读取 `GET /integration/capabilities`，确认 `exports.hydro_routes_enabled` 与可用路由。

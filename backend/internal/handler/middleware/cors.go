@@ -10,15 +10,14 @@ import (
 // CORSConfig holds the configurable parameters for CORS.
 type CORSConfig struct {
 	// AllowOrigins is the list of origins that are allowed to access the API.
-	// Use ["*"] during development; restrict to specific domains in production.
+	// Empty means same-origin only. Wildcards must not be used with sessions.
 	AllowOrigins []string
 }
 
-// DefaultCORSConfig returns a permissive CORS configuration suitable for
-// local development.
+// DefaultCORSConfig keeps browser sessions on the service origin.
 func DefaultCORSConfig() CORSConfig {
 	return CORSConfig{
-		AllowOrigins: []string{"*"},
+		AllowOrigins: nil,
 	}
 }
 
@@ -28,7 +27,12 @@ func DefaultCORSConfig() CORSConfig {
 func CORS(cfg CORSConfig) echo.MiddlewareFunc {
 	allowOrigins := cfg.AllowOrigins
 	if len(allowOrigins) == 0 {
-		allowOrigins = []string{"*"}
+		return func(next echo.HandlerFunc) echo.HandlerFunc { return next }
+	}
+	for _, origin := range allowOrigins {
+		if origin == "*" {
+			return func(next echo.HandlerFunc) echo.HandlerFunc { return next }
+		}
 	}
 
 	return echomw.CORSWithConfig(echomw.CORSConfig{
@@ -50,6 +54,10 @@ func CORS(cfg CORSConfig) echo.MiddlewareFunc {
 			echo.HeaderXRequestID,
 			"X-Requested-With",
 			"X-Qraft-Review-Token",
+			"X-Qraft-Invitation-Token",
+			"X-Qraft-Client",
+			"X-CSRF-Token",
+			"Idempotency-Key",
 		},
 		ExposeHeaders: []string{
 			echo.HeaderContentLength,

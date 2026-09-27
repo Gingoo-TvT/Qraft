@@ -20,10 +20,11 @@ func TestSandboxInputCapacityContract(t *testing.T) {
 	exactCase := strings.Repeat("x", maxInputBytes)
 	response := contractExecute(t, baseURL, "c", source, []string{exactCase}, limits)
 	if !response.Compile.Success || len(response.Results) != 1 || response.Results[0].Verdict != verdictOK {
-		t.Fatalf("exact 8 MiB input failed: %+v", response)
+		t.Fatalf("exact 32 MiB input failed: %+v", response)
 	}
 
-	exactBatch := []string{exactCase, exactCase, exactCase, exactCase}
+	quarter := strings.Repeat("x", maxInputsBytes/4)
+	exactBatch := []string{quarter, quarter, quarter, quarter}
 	response = contractExecute(t, baseURL, "c", source, exactBatch, limits)
 	if !response.Compile.Success || len(response.Results) != 4 {
 		t.Fatalf("exact 32 MiB batch failed: %+v", response)
@@ -37,7 +38,7 @@ func TestSandboxInputCapacityContract(t *testing.T) {
 		Version: apiVersion, Language: "c", Source: source,
 		Inputs: append(exactBatch, "x"), Limits: limits,
 	})
-	t.Log("real HTTP service accepted exact 8/32 MiB inputs and rejected both +1 byte boundaries")
+	t.Log("real HTTP service accepted exact 32 MiB single/aggregate inputs and rejected both +1 byte boundaries")
 }
 
 func contractExpectRequestTooLarge(t *testing.T, baseURL string, request executeRequest) {

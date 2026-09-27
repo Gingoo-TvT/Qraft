@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import '@/styles/home.css';
 import '@/styles/detail.css';
+import { AuthProvider } from '@/components/auth/AuthProvider';
 import AppShell from '@/components/layout/AppShell';
 
 // ---------------------------------------------------------------------------
@@ -31,7 +32,7 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <body className="min-h-screen font-sans">
-        <AppShell>{children}</AppShell>
+        <AuthProvider><AppShell>{children}</AppShell></AuthProvider>
       </body>
     </html>
   );

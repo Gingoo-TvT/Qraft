@@ -52,6 +52,7 @@ export default function ProblemSetsPage() {
       <PageHeader eyebrow="内容管理" title="题集与组卷" description="将题目编排成比赛、课程练习和作业，在这里继续编辑与导出。"
         actions={<>
           <Link href="/problem-sets/assemble" className="forge-btn-secondary"><Layers3 className="h-4 w-4" />从题库组卷</Link>
+          <Link href="/problems/import" className="forge-btn-secondary">链接与题目导入</Link>
           <Link href="/problem-sets/new" className="forge-btn-primary"><Plus className="h-4 w-4" />创建题集</Link>
         </>}
       />

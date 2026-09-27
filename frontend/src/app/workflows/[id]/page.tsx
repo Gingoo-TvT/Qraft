@@ -19,6 +19,7 @@ import {
 import { PageHeader, SectionHeading } from '@/components/ui/Workspace';
 import RefreshButton from '@/components/RefreshButton';
 import SimilarityPanel from '@/components/workflow/SimilarityPanel';
+import ProviderFailureNotice from '@/components/workflow/ProviderFailureNotice';
 import {
   useWorkflow,
   useWorkflowActions,
@@ -151,6 +152,7 @@ function RejectDialog({
 export default function WorkflowDetailPage() {
   const params = useParams();
   const id = params.id as string;
+  const importParentID = id.match(/^(problem-import-[0-9a-f-]{36})(?:-item-\d+)?$/)?.[1];
 
   const { workflow, loading, error, refresh } = useWorkflow(id);
   const { events, latestEvent, connected, error: sseError } =
@@ -331,9 +333,10 @@ export default function WorkflowDetailPage() {
           />
         </div>
 </>} />
+    {importParentID && <Link href={"/problems/import?workflow=" + encodeURIComponent(importParentID)} className="forge-btn-secondary w-fit"><ExternalLink size={16} />查看整批导入结果</Link>}
     <div className="af-task-state">
-      <span className={cn('forge-badge', statusBadgeColor(friendly))}>{STATUS_LABELS[friendly] ?? friendly}</span>
-      <div><strong>{friendly === 'completed' ? '这次创作已完成' : friendly === 'failed' ? '任务需要处理' : friendly === 'waiting_review' ? '等待你的审核' : friendly === 'cancelled' ? '任务已停止' : '正在推进创作'}</strong>
+      <span className={cn('forge-badge', statusBadgeColor(friendly))}>{importParentID && friendly === 'approved' ? '已完成' : STATUS_LABELS[friendly] ?? friendly}</span>
+      <div><strong>{(friendly === 'completed' || friendly === 'approved') ? '这次执行已完成' : friendly === 'failed' ? '任务需要处理' : friendly === 'waiting_review' ? '等待你的审核' : friendly === 'cancelled' ? '任务已停止' : '正在推进创作'}</strong>
         <p>{problemId ? '生成结果已保存，可以打开题目继续查看与编辑。' : workflow.close_time ? '结束于 ' + formatRelativeTime(workflow.close_time) : '进度保存在服务端，可以稍后返回查看。'}</p></div>
       {problemId && <Link href={'/problems/' + problemId} className="forge-btn-primary"><ExternalLink size={16} />打开题目</Link>}
       {!isTerminal && <span className="af-task-connection">{connected ? <Wifi size={15} /> : <WifiOff size={15} />}{connected ? '实时更新' : '正在重连'}</span>}
@@ -357,6 +360,7 @@ export default function WorkflowDetailPage() {
               <p className="mt-1 whitespace-pre-wrap break-words font-mono text-xs text-danger-600 dark:text-danger-400">
                 {workflow.failure_reason}
               </p>
+              <ProviderFailureNotice failure={workflow.failure_reason} />
             </div>
           </div>
         </div>
@@ -394,7 +398,7 @@ export default function WorkflowDetailPage() {
               <dt className="text-anvil-500 dark:text-anvil-400">状态</dt>
               <dd>
                 <span className={cn('forge-badge', statusBadgeColor(friendly))}>
-                  {STATUS_LABELS[friendly] ?? friendly}
+                  {importParentID && friendly === 'approved' ? '已完成' : STATUS_LABELS[friendly] ?? friendly}
                 </span>
               </dd>
             </div>

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/Gingoo-TvT/Qraft/backend/internal/access"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -157,7 +158,7 @@ func TestS5MicroBatchCreateBindsIdentityAndParentRuntimeTTL(t *testing.T) {
 	body := string(bodyBytes)
 	_, payloadSHA256, err := request.CanonicalPayload()
 	require.NoError(t, err)
-	batchID, principalSHA256, err := diversityapi.BatchIDForIdempotencyKey("local-dev", "create-s5")
+	batchID, principalSHA256, err := diversityapi.BatchIDForIdempotencyKey("user:local-test", "create-s5")
 	require.NoError(t, err)
 
 	temporalClient := temporalmocks.NewClient(t)
@@ -211,7 +212,7 @@ func TestS5MicroBatchIdempotentReplayAndConflictUseParentMemo(t *testing.T) {
 	request := s5MicroBatchTestRequest(t, generationapi.EvidenceMinimal)
 	_, payloadSHA256, err := request.CanonicalPayload()
 	require.NoError(t, err)
-	batchID, principalSHA256, err := diversityapi.BatchIDForIdempotencyKey("local-dev", "replay-s5")
+	batchID, principalSHA256, err := diversityapi.BatchIDForIdempotencyKey("user:local-test", "replay-s5")
 	require.NoError(t, err)
 	quality, _ := qualitymode.ResolveMode(qualitymode.ModeQualityV1, true, nil)
 
@@ -242,7 +243,7 @@ func TestS5MicroBatchIdempotentReplayAndConflictUseParentMemo(t *testing.T) {
 }
 
 func TestS5MicroBatchCompletedStatusAndResultProjectExactlyThreeProblems(t *testing.T) {
-	batchID, principalSHA256, err := diversityapi.BatchIDForIdempotencyKey("local-dev", "completed-s5")
+	batchID, principalSHA256, err := diversityapi.BatchIDForIdempotencyKey("user:local-test", "completed-s5")
 	require.NoError(t, err)
 	parentResult, problems := s5ValidParentResultV1(t, batchID)
 	quality, _ := qualitymode.ResolveMode(qualitymode.ModeQualityV1, true, nil)
@@ -295,7 +296,7 @@ func TestS5MicroBatchCompletedStatusAndResultProjectExactlyThreeProblems(t *test
 }
 
 func TestS5MicroBatchResultRejectsSplicedDedupObservation(t *testing.T) {
-	batchID, principalSHA256, err := diversityapi.BatchIDForIdempotencyKey("local-dev", "spliced-s5")
+	batchID, principalSHA256, err := diversityapi.BatchIDForIdempotencyKey("user:local-test", "spliced-s5")
 	require.NoError(t, err)
 	parentResult, problems := s5ValidParentResultV1(t, batchID)
 	parentResult.DedupObservations[0].ContentHash = strings.Repeat("f", 64)
@@ -318,7 +319,7 @@ func TestS5MicroBatchResultRejectsSplicedDedupObservation(t *testing.T) {
 }
 
 func TestS5MicroBatchRunningStatusUsesValidatedParentQuery(t *testing.T) {
-	batchID, principalSHA256, err := diversityapi.BatchIDForIdempotencyKey("local-dev", "running-s5")
+	batchID, principalSHA256, err := diversityapi.BatchIDForIdempotencyKey("user:local-test", "running-s5")
 	require.NoError(t, err)
 	state := algoworkflow.S5MicroBatchStateV1{
 		PayloadVersion: algoworkflow.S5MicroBatchPayloadVersionV1,
@@ -562,9 +563,11 @@ func invokeS5MicroBatchHandler(
 		ctx.SetParamNames("id")
 		ctx.SetParamValues(batchID)
 	}
-	if claims != nil {
-		ctx.Set("user", claims)
+	if claims == nil {
+		claims = &authmw.JWTClaims{UserID: "local-test", Role: "member"}
 	}
+	ctx.Set("user", claims)
+	ctx.SetRequest(request.WithContext(access.WithPrincipal(request.Context(), access.Principal{UserID: claims.UserID, Role: claims.Role})))
 	require.NoError(t, handler(ctx))
 	return recorder
 }

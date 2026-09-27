@@ -3,10 +3,37 @@
 本文说明 Qraft 工作区的主要 HTTP 接口。客户端可连接自行部署或已有的兼容服务。
 
 - **默认 Base URL：** `http://localhost:18180/api/v1`。连接远程服务时替换为管理员提供的地址。
-- **访问方式：** 当前服务为共享工作区，没有内置用户登录或租户隔离；若管理员配置了认证网关，按网关要求附加凭据。接口中的内容可见性标记不替代访问控制。
+- **访问方式：** 当前源码使用邮箱密码登录和可撤销 Cookie 会话；写操作携带会话绑定的 CSRF token。成员只操作自己的任务，管理员管理账号、全局配置和共享内容。稳定 V2.2.0 后端尚无该模块。
 - **响应格式：** 普通 JSON 接口使用 `APIResponse`；能力发现接口直接返回 JSON，文件下载和事件流使用各自内容类型。
 
 本文保留 `algoforge.*` schema、`ALGOFORGE_*` 配置名与兼容响应头，便于已有客户端继续调用。示例中的地址、模型名和题目仅用于说明，请使用自己的工作区和模型设置。
+
+## 账号会话
+
+账号与邀请流程见[共享服务指南](shared-service-auth.md)。以下均使用标准 APIResponse 信封，地址相对于 /api/v1：
+
+| 方法与路径 | 请求 / 返回 |
+|---|---|
+| GET /auth/session | 返回 mode、authenticated、user、csrf_token、setup_required；未登录也可查询 |
+| POST /auth/bootstrap | token、email、password、display_name；仅空账号库且持有部署令牌时允许 |
+| POST /auth/login | email、password；成功设置 HttpOnly Cookie 并返回会话信息 |
+| POST /auth/logout | 撤销当前会话 |
+| POST /auth/password | current_password、new_password；撤销全部旧会话后重新登录 |
+| GET /auth/invitation | X-Qraft-Invitation-Token 请求头；返回绑定邮箱、用途和期限 |
+| POST /auth/register | token、password、display_name；邀请限定邮箱，不能指定角色 |
+| POST /auth/reset-password | token、password；仅重置用途邀请 |
+| GET /admin/users | 管理员读取账号 items |
+| PATCH /admin/users/:id | role 和/或 disabled；保护最后一个有效管理员 |
+| GET /admin/invitations | 管理员读取邀请 items，原始令牌不返回 |
+| POST /admin/invitations | email、kind（register 或 reset）；仅创建响应含原始 token |
+| DELETE /admin/invitations/:id | 管理员撤销邀请 |
+| GET /settings/generation-readiness | 成员可读 ready/message，不暴露模型地址或凭据 |
+
+匿名账号写操作携带 X-Qraft-Client: 1；已登录写操作另带 X-CSRF-Token，其值来自登录或 session 响应。GET、下载与 SSE 使用相同服务的 Cookie，禁止将会话放入 URL。公共评题令牌与账号邀请不能混用。
+
+任务归属取自服务端会话，不接受 X-Actor 或 created_by 作为权限凭据。新增业务路由必须显式分类，否则拒绝访问。未登录返回 401，已登录但无权限返回 403，不存在或不可见资源一般返回 404。
+
+本期没有长期机器访问令牌或 OAuth 客户端凭据接口。自动化可通过专用受邀账号建立短期会话并遵守相同权限，不能继续把自签名 JWT 当账号认证。旧无认证示例仅适用于显式回环开发模式；共享服务的 curl 调用需要登录取得 Cookie jar 后使用 -b，并为写入提供 X-CSRF-Token。
 
 ## 通用响应格式
 
@@ -64,6 +91,16 @@
 | 请求大小 | Hydro 预检 ZIP 最大 128 MiB；`problem.yaml`、题面 Markdown 和 `testdata/config.yaml` 单个文本文件最大 2 MiB。 |
 | 集成示例 | `examples/hydro_cleanroom_client.py` 提供零第三方依赖 client；`scripts/dev/hydro-chain-smoke.ps1` 提供“生成/已有题 -> 验算 -> Hydro 包 -> 预检”链路脚本。 |
 
+共享服务使用 HttpOnly Cookie 会话；示例客户端支持账号登录、自动携带 CSRF token，并在操作结束（含业务请求失败）时退出会话。运行后按提示输入密码，输入内容不回显：
+
+    python3 examples/hydro_cleanroom_client.py \
+      --base-url https://qraft.example.com/api/v1 --email member@example.com \
+      generate --payload request.json
+
+账号模式要求 HTTPS（本机回环 HTTP 调试除外），并拒绝重定向；请填写最终的服务地址。自动化场景可由运行环境的密钥管理注入 `QRAFT_PASSWORD`，不要把密码写入命令、脚本或提交到仓库。Cookie 仅存于进程内存。
+
+`--token` 仅保留给旧版外部网关兼容场景；新部署不要把服务会话放进 bearer token、localStorage 或 URL。
+
 ---
 
 ## 统一题目搜索
@@ -90,7 +127,7 @@
 
 详情链接必须按 `source` 决定：`problem` 对应 `/problems/:id`，`quiz` 对应 `/quizzes/:id`。客观题库中兼容保留的 `type=programming` 记录仍归 `quiz`；两库相同 UUID 也是不同记录。
 
-搜索延续共享工作区题库的可见范围，排除隔离、拒绝和已删除的编程题；不增加用户权限或租户隔离。错误参数返回 HTTP 400。旧服务没有本接口时，客户端显示升级提示和原题库入口，不将单库结果当作完整搜索结果。
+成员搜索仅返回已发布编程题和公开客观题；管理员可以查看更广的创作范围，搜索仍排除隔离、拒绝和已删除的编程题。自己的未共享结果通过任务进入。错误参数返回 HTTP 400。旧服务没有本接口时，客户端显示升级提示和原题库入口，不将单库结果当作完整搜索结果。
 
 ---
 
@@ -116,19 +153,19 @@
 | `provider_config.statement.base_url` | string | 否 | 题面生成服务根地址；系统按协议补充具体路径 |
 | `provider_config.statement.provider` | string | 否 | 题面生成 provider 身份；设置 `base_url` 时必填，用于 provenance/审计 |
 | `provider_config.statement.protocol` | string | 否 | `auto`、`gemini-native`、`openai-responses`、`anthropic-messages` 或 `openai-chat`；默认 `auto` |
-| `provider_config.statement.api_key_ref` | string | 否 | 题面生成 key 引用，支持 `env:NAME` 或 API 下发的 `runtime:<token>` |
+| `provider_config.statement.api_key_ref` | string | 否 | 内部保留字段，HTTP 请求不得指定 |
 | `provider_config.statement.api_key` | string | 否 | 题面生成本次请求 API key；API 服务会换成短期 `runtime:<token>`，不回显、不入库 |
 | `provider_config.verification.model` | string | 否 | LLM 验算使用的模型；为空时继承已保存的有效 V 配置 |
 | `provider_config.verification.base_url` | string | 否 | LLM 验算服务根地址；系统按协议补充具体路径 |
 | `provider_config.verification.provider` | string | 否 | LLM 验算 provider 身份；设置 `base_url` 时必填，用于 provenance/审计 |
 | `provider_config.verification.protocol` | string | 否 | 与 statement 相同；`auto` 按模型名和 provider 自动识别协议 |
-| `provider_config.verification.api_key_ref` | string | 否 | LLM 验算 key 引用，支持 `env:NAME` 或 API 下发的 `runtime:<token>` |
+| `provider_config.verification.api_key_ref` | string | 否 | 内部保留字段，HTTP 请求不得指定 |
 | `provider_config.verification.api_key` | string | 否 | LLM 验算本次请求 API key；API 服务会换成短期 `runtime:<token>`，不回显、不入库 |
 | `provider_config.review.*` | 同 verification | 否 | R 独立覆盖；未提供时按有效 V 配置运行 |
 
-`api_key` 和 `api_key_ref` 不能同时传。外部集成推荐优先使用 `env:NAME`；需要由平台用户临时输入 key 时，传 `api_key`，API 服务会在启动工作流前存入 Redis 短期密钥槽并把工作流参数改写为 `runtime:<token>`，避免原始密钥进入 Temporal history、题目元数据和响应体。
+成员请求不能提供 `provider_config`，始终使用管理员保存的配置。管理员可以提供模型覆盖与自己本次提供的原始 API key，但请求中的 `api_key_ref` 被拒绝，环境密钥与短期引用仅由服务端解析和签发。原始密钥换成短期 Redis 引用后再进入工作流，不进入 Temporal history。
 
-API 自动注入 `/settings/llm` 的有效配置：statement 必须先保存完整的 Base URL、模型和 API Key；V 无独立覆盖时跟随 G，R 无独立覆盖时跟随 V。请求只覆盖 `model` 时可沿用该角色的有效密钥；请求一旦改变 `base_url`、`provider` 或 `protocol`，必须同时提供自己的 `api_key` 或 `api_key_ref`，避免把永久密钥发送到调用方指定的新端点。没有用户保存配置时不会回退到部署模型，而是明确返回配置错误。
+API 自动注入 `/settings/llm` 的有效配置：statement 必须先保存完整的 Base URL、模型和 API Key；V 无独立覆盖时跟随 G，R 无独立覆盖时跟随 V。请求只覆盖 `model` 时可沿用该角色的有效密钥；请求一旦改变 `base_url`、`provider` 或 `protocol`，必须同时提供自己的 `api_key`，避免把永久密钥发送到调用方指定的新端点。没有用户保存配置时不会回退到部署模型，而是明确返回配置错误。
 
 `auto` 对 `gemini-*` 使用 Gemini Native，对 `gpt-*`/`o1*`/`o3*`/`o4*` 使用 OpenAI Responses，对 `claude-*` 使用 Anthropic Messages；其他兼容服务按配置使用 OpenAI Chat Completions。Gemini 和 Claude 的 Base URL 填根地址，OpenAI 路径也可填根地址，Qraft 会避免重复追加 `/v1`。
 
@@ -168,7 +205,7 @@ curl -X POST http://localhost:18180/api/v1/problems/generate \
         "base_url": "https://llm.example.com",
         "provider": "custom",
         "protocol": "auto",
-        "api_key_ref": "env:ALGOFORGE_REVIEW_LLM_KEY"
+        "api_key": "YOUR_OWN_ONE_TIME_API_KEY"
       }
     }
   }'
@@ -186,7 +223,7 @@ curl -X POST http://localhost:18180/api/v1/problems/generate \
 ### 1.1A POST /generation/jobs
 
 **创建稳定的单候选生成 job。** 当前 v1 的 `candidate_count` 必须为 `1`；大于 `1` 会以
-`unsupported_constraint` fail-closed。请求必须携带 `Idempotency-Key`，key 绑定调用主体和规范化请求。默认共享工作区没有登录主体，客户端应使用不冲突的 key；不能依靠此机制实现用户隔离。
+`unsupported_constraint` fail-closed。请求必须携带 `Idempotency-Key`，key 绑定调用主体和规范化请求。当前共享账号模式以稳定 user_id 隔离幂等空间，并在任务读取、事件、取消与重试时再次检查归属。历史无归属任务只允许管理员访问。
 
 `ALGOFORGE_CUSTOM_GENERATION_API_MODE` 默认是 `jobs-v1`。设置为 `legacy-only` 或
 `contract-preview` 会关闭这五个 jobs 路由，但保留旧 `/problems/generate`；未知 mode 会阻止 API 启动。
@@ -1687,3 +1724,47 @@ curl -X PUT http://localhost:18180/api/v1/settings/llm/statement \
 ## 题目评估与正式评级
 
 本分支新增独立评估、邀请评价、反馈复核与管理员确认 API。完整路径、权限与字段说明见[题目评估](problem-rating.md#api)。统一搜索及组卷支持显式 `rating_basis=official` 或 `target`；省略时兼容原有目标难度，正式值与原 `difficulty` 分开保存。
+
+
+### 题集测试 ZIP（未发布源码功能）
+
+`GET /api/v1/problem-sets/{id}/export.zip?mode=testing&format=generic` 下载通用测试包；将 `format` 改为 `hydro` 下载可用于 Hydro 题库导入的多题包。仍要求对题集及每道题具有读取权限，沿用账号会话/现有 API 认证。
+
+- **通用包**：根目录 `problems.xlsx` 按模板版本 2 保留全部题型与测试点配置；编程题数据在 `datas/题目编号/`。`problem-set.json` 保留题序、分值、原始 rating 和来源题号，`problems/001/` 等目录保留 Markdown 与验证摘要。标签与分档细则见本节末的模板说明。
+- **Hydro 包**：根级 `001/`、`002/` 等目录每题含 `problem.yaml`、`problem_zh.md` 和 `testdata/`。题号按题集顺序生成；不自动创建比赛，题集分值仍需按清单配置。当前适配仅支持纯编程题集、普通判题；混合题集会报错，须下载通用包。
+- **测试边界**：允许读取有完整数据验证证据的 draft/review 题目，不要求正式发布审核；V1 沙箱清单须与输入输出逐一匹配并含有效差分验证，V2 沿用 S3 证据绑定。拒绝缺数据、过期/改动数据、缺验证证据、隔离或仍生成中的题目。题集规划数量和近期复用不阻断测试，清单记录当前全部题目，不会静默丢题。
+- **状态与审计**：包标明 `mode: testing`，响应含 `X-Qraft-Export-Mode: testing` 与 `X-AlgoForge-Export-Profile: qraft.problem-set.testing.generic.v2`（或 `hydro.v1`）。成功写 `validated` 审计事件，并记录 `operation: testing_exported`；不改变发布状态，不进入正式导出的复用冷却记录。
+- 参数/混合格式错误返回 400；数据未就绪或证据不匹配返回 409，并指出题号；无访问权限返回 404。失败时返回 API JSON 错误，不返回残缺 ZIP。
+
+省略 `mode` 或使用 `mode=publication` 的原下载接口仍保留原有正式题集质量、复用确认和发布证据门禁，格式仍为 `algoforge.problem-set.v1`。正式格式只接受空 `format` 或 `format=qraft`。
+
+
+## 外部来源与批量导入
+
+成员可使用 POST /sources/preview 解析公开 HTTP/HTTPS 题目或题集链接；响应包含 url、final_url、title、kind（problem 或 collection）、items、warnings。题集成员正文可为空，须按选中成员再次解析，不递归抓取站点。单次请求最长 20 秒、正文限制 2 MiB，不携带用户登录态。
+
+POST /problem-imports 接收 mode（preserve_statement / inspiration）、items、create_set；title 为新题集名称，可选 difficulty（800–3500，步长 100）、language、locale。单题字段为 item_id、title、statement、可选 source_url / source_id。禁止传入模型覆盖和所有者字段，模型沿用服务端配置。最多 50 题，单题 128 KiB、整批 1 MiB，题目标题最多 200 个 Unicode 字符，题集名称最多 255 个 Unicode 字符。成功返回 202 与 data.workflow_id。
+
+GET /problem-imports/:id 返回 status、items、counts、problem_set_id。逐项状态为 pending、running、imported、skipped_duplicate、failed 或 assessment_failed；失败和重复不终止整批。仅所有者或管理员可读。assessment_failed 仍保留 problem_id 和数据，管理员可重启评估；不会自动批准正式 rating。statement_changed 与 clarification_reason 说明原题是否因具体歧义修订。
+
+使用说明和 ZIP 文件结构见 [外部来源导入与题集测试包](source-import-export.md)。
+
+
+### 通用题集 ZIP：Excel 模板版本 2
+
+`GET /api/v1/problem-sets/:id/export.zip?mode=testing&format=generic` 返回 `qraft.problem-set.testing.generic.v2`：根目录 `problems.xlsx` 包含“题目列表”19 列与“测试点配置”12 列，编程题数据在 `datas/题目编号/`。清单中 `import_code` 与 `data_directory` 指向导入字段和数据，原始 `rating` 与 `tags` 保留。选择、填空、判断题在同一张表中。
+
+`POST` 同一路径可携带 `{"tag_catalog":{"activeTagsTree":[...]}}`，最大请求 1 MiB，采用成员会话、题集读权限和 CSRF 校验。标签节点含字符串 `id`、`name`、`status:1`、`delFlag:"0"`、`parentId` 与 `children`。只匹配有效 ID、完整路径或唯一名称，未匹配项进入 `export-notes.json` 和工作簿“导出说明”。不保存上传目录，不改变题目和全局设置。POST 不接受正式发布或 Hydro 格式。
+
+字段约定、六档难度区间和使用方式见 [外部来源与题集导出](source-import-export.md)。Hydro 格式仍为 `qraft.problem-set.testing.hydro.v1`。
+
+
+### 恢复外部导入
+
+`POST /api/v1/problem-imports/:id/resume`：需要登录及该任务访问权限，写请求仍受 CSRF 校验。返回 202 与 `data.workflow_id`。运行中的批次返回 409。服务端保留已入库题目，继续未完成项；相同原任务运行的恢复请求幂等。结果条目的 `estimated_difficulty`、`difficulty_reason` 是非校准模型参考值；`warning` 表示不阻塞入库的提示。
+
+### 标准 OJ 题面与任务分页
+
+新的原题导入在 `PrepareImportedStatementActivity` 内调用已配置的模型提取内容，以固定四级标题和代码块生成题面。`import_source.oj_statement` 记录结构化内容与样例来源；`original` 和原始哈希保留原文，`final_sha256` 绑定实际入库题面。样例不可为空，原样例不得遗漏；新增样例需主解法和独立解法双重执行验证。已有工作流通过 Temporal 版本标记维持原历史路径。
+
+`GET /api/v1/workflows?size=20&status=completed&cursor=...` 使用游标分页。首请求省略 `cursor`，后续将 `meta.next_page_token` 原样传回 `cursor`；该字段缺失表示末页。切换状态或大小需清空游标。响应 `data` 仍为任务数组；不提供未计算的 `total`，客户端不得将缺失值解释为总数为零。各页继续执行任务所有者校验。

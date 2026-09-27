@@ -1,3 +1,6 @@
+import { AuthProvider, useAuth } from '@/components/auth/AuthProvider';
+import AuthBoundary from '@/components/auth/AuthBoundary';
+import { isAdminRoute } from '@/lib/auth-session';
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpRight, BookOpen, Boxes, Check, Command, Download, FileText, FolderOpen, HelpCircle, Layers3, LayoutDashboard, ListChecks, Loader2, Plus, Search, Settings2, ShieldCheck, Sparkles, Tag, Workflow, X } from 'lucide-react';
 import Link, { navigate, usePathname } from './router';
@@ -18,14 +21,19 @@ const groups = [
  { label: '内容管理', items: [{ to: '/problems', name: '编程题库', icon: FileText }, { to: '/quizzes', name: '客观题库', icon: BookOpen }, { to: '/problem-sets', name: '题集管理', icon: FolderOpen }, { to: '/problems/quarantine', name: '隔离区', icon: ShieldCheck }] },
  { label: '工具与配置', items: [{ to: '/knowledge-points', name: '知识点目录', icon: Tag }, { to: '/settings', name: '模型配置', icon: Settings2 }, { to: '/embedding', name: '去重服务', icon: Boxes }] },
 ];
-const actions = [...groups.flatMap(group => group.items), { to: '/quizzes/new', name: '创建客观题', icon: Plus }, { to: '/quizzes/import', name: '导入客观题', icon: Download }, { to: '/problems/hydro/import', name: '校验 Hydro 包', icon: ShieldCheck }, { to: '/testdata-config', name: '测试数据工具', icon: ListChecks }, { to: '/desktop/settings', name: '客户端设置', icon: Settings2 }, { to: '/desktop/exports', name: '导出记录', icon: Download }];
+const actions = [{ to: '/problems/import', name: '链接与题目导入', icon: Download }, { to: '/account', name: '我的账号', icon: Settings2 }, { to: '/admin/users', name: '用户与邀请', icon: ShieldCheck }, ...groups.flatMap(group => group.items), { to: '/quizzes/new', name: '创建客观题', icon: Plus }, { to: '/quizzes/import', name: '导入客观题', icon: Download }, { to: '/problems/hydro/import', name: '校验 Hydro 包', icon: ShieldCheck }, { to: '/testdata-config', name: '测试数据工具', icon: ListChecks }, { to: '/desktop/settings', name: '客户端设置', icon: Settings2 }, { to: '/desktop/exports', name: '导出记录', icon: Download }];
 class PageBoundary extends React.Component<{ children: React.ReactNode }, { error: string }> {
  state = { error: '' };
  static getDerivedStateFromError(error: Error) { return { error: error.message }; }
  render() { return this.state.error ? <div className="desktop-empty large" role="alert"><HelpCircle size={30} /><strong>页面暂时无法显示</strong><p>{this.state.error}</p><button className="desktop-primary-button" onClick={() => this.setState({ error: '' })}>重新加载页面</button></div> : this.props.children; }
 }
 export default function App() {
+ const { state } = useDesktop();
+ return <AuthProvider enabled={state.configured && Boolean(state.service_url)}><DesktopApp /></AuthProvider>;
+}
+function DesktopApp() {
  const path = usePathname();
+ const { isAdmin, session } = useAuth();
  const { state, preferences, connection, probing, notice, setNotice, updatePreferences, refreshState } = useDesktop();
  const [palette, setPalette] = useState(false);
  const [mobileOpen, setMobileOpen] = useState(false);
@@ -35,7 +43,7 @@ export default function App() {
  const [query, setQuery] = useState('');
  const [exporting, setExporting] = useState(false);
  const Page = routePage(path);
- const commands = useMemo(() => actions.filter(item => item.name.toLowerCase().includes(query.trim().toLowerCase())), [query]);
+ const commands = useMemo(() => actions.filter(item => (isAdmin || !isAdminRoute(item.to)) && item.name.toLowerCase().includes(query.trim().toLowerCase())), [query, isAdmin]);
  useEffect(() => { setCommandIndex(0); }, [query, palette]);
  useEffect(() => { if (palette) document.getElementById('desktop-command-' + commandIndex)?.scrollIntoView({ block: 'nearest' }); }, [palette, commandIndex]);
  useEffect(() => {
@@ -95,7 +103,7 @@ export default function App() {
   window.addEventListener('algoforge:exported', exported);
   return () => window.removeEventListener('algoforge:exported', exported);
  }, [setNotice]);
- if (path === '/rating/review' && Page) return <div className="af-standalone font-sans"><PageBoundary key={path}><Suspense fallback={<p role="status">正在打开评价…</p>}><Page /></Suspense></PageBoundary></div>;
+ if ((path === '/rating/review' || path === '/account/invitation' || path === '/account/login') && Page) return <div className="af-standalone font-sans"><PageBoundary key={path}><Suspense fallback={<p role="status">正在打开评价…</p>}><Page /></Suspense></PageBoundary></div>;
  if (!state.configured) return <Welcome />;
  function select(to: string) { setPalette(false); setQuery(''); navigate(to); }
  return <div className={'af-shell af-desktop font-sans' + (preferences.sidebar_collapsed ? ' is-collapsed' : '') + (mobileOpen ? ' is-mobile-open' : '')} data-bundled-workbench="true">
@@ -111,11 +119,11 @@ export default function App() {
       <div><strong>{state.operation.busy && ['start', 'sync'].includes(state.operation.action) ? '本机后端正在启动' : '服务尚未就绪'}</strong><p>你可以继续浏览页面和填写需求；读取题库、保存配置和提交任务需要先连接服务。</p></div>
       <div className="desktop-form-actions"><Link href={'/desktop/settings?tab=' + (state.config.mode === 'local' ? 'local' : 'connection')} className="desktop-subtle-button">{state.config.mode === 'local' ? '前往本地后端' : '连接已有服务'}</Link><button type="button" className="desktop-subtle-button" disabled={state.operation.busy} onClick={() => { void refreshState().catch(error => setNotice(error.message)); }}>刷新连接状态</button></div>
      </section>}
-     <PageBoundary key={path}><Suspense fallback={<div className="desktop-empty large"><Loader2 size={26} className="animate-spin" /><strong>正在打开页面…</strong></div>}>
+     <AuthBoundary><PageBoundary key={path}><Suspense fallback={<div className="desktop-empty large"><Loader2 size={26} className="animate-spin" /><strong>正在打开页面…</strong></div>}>
      {path === '/' ? <Home /> : path === '/desktop/settings' ? <Settings /> : path === '/desktop/exports' ? <Exports /> : Page ? <Page /> : <div className="desktop-empty large"><HelpCircle size={30} /><strong>没有这个页面</strong><Link href="/" className="desktop-primary-button">返回工作台</Link></div>}
-    </Suspense></PageBoundary>
+    </Suspense></PageBoundary></AuthBoundary>
    </main>
-   <footer className="desktop-statusbar"><button onClick={() => navigate('/desktop/settings')}><i className={connection?.ready ? 'connected' : probing ? 'pending' : ''} />{state.operation.busy ? (state.operation.action.startsWith('update-') ? '客户端更新中' : '本地服务操作中') : connection?.ready ? '服务已连接' : probing ? '正在连接服务' : '服务未连接'}{connection?.release_version && <span>v{connection.release_version}</span>}</button><span className="desktop-statusbar-hint">{state.operation.busy ? state.operation.message.split('\n')[0] : (state.config.mode === 'local' && !state.service_url ? '本机后端尚未启动，请完成部署设置' : '生成任务由工作区持续运行')}</span><button ref={commandTrigger} title="快捷操作 · Ctrl Shift K" onClick={() => setPalette(true)}><Command size={12} />快捷操作</button></footer>
+   <footer className="desktop-statusbar"><button onClick={() => navigate('/desktop/settings')}><i className={connection?.ready ? 'connected' : probing ? 'pending' : ''} />{state.operation.busy ? (state.operation.action.startsWith('update-') ? '客户端更新中' : '本地服务操作中') : connection?.ready ? (session?.mode === 'shared' && !session.authenticated ? '服务已连接 · 请登录' : '服务已连接') : probing ? '正在连接服务' : '服务未连接'}{connection?.release_version && <span>v{connection.release_version}</span>}</button><span className="desktop-statusbar-hint">{state.operation.busy ? state.operation.message.split('\n')[0] : (state.config.mode === 'local' && !state.service_url ? '本机后端尚未启动，请完成部署设置' : '生成任务由工作区持续运行')}</span><button ref={commandTrigger} title="快捷操作 · Ctrl Shift K" onClick={() => setPalette(true)}><Command size={12} />快捷操作</button></footer>
   </div>
   {notice && <div role="status" className="desktop-notice"><Check size={17} /><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice('')}><X size={16} /></button></div>}
   {palette && <div className="desktop-palette-overlay" onMouseDown={event => { if (event.target === event.currentTarget) setPalette(false); }}><section role="dialog" aria-modal="true" aria-label="快捷操作" className="desktop-palette" onKeyDown={event => {

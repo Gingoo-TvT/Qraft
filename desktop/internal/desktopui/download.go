@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -26,9 +27,19 @@ type Download struct {
 }
 
 func (s *Server) download(ctx context.Context, raw, name, authorization string) (Download, error) {
+	return s.downloadRequest(ctx, raw, name, authorization, nil, "")
+}
+
+func (s *Server) downloadRequest(ctx context.Context, raw, name, authorization string, body json.RawMessage, csrf string) (Download, error) {
 	relative, e := apiPath(raw)
 	if e != nil {
 		return Download{}, e
+	}
+	if len(body) > 0 {
+		segments := strings.Split(strings.Trim(relative.Path, "/"), "/")
+		if len(body) > 900<<10 || !json.Valid(body) || len(segments) != 5 || segments[0] != "api" || segments[1] != "v1" || segments[2] != "problem-sets" || segments[4] != "export.zip" || relative.Query().Get("mode") != "testing" || relative.Query().Get("format") != "generic" {
+			return Download{}, fmt.Errorf("带参数的下载仅支持通用题集测试包，参数不得超过 900 KiB")
+		}
 	}
 	return s.save(name, func() (io.ReadCloser, int64, error) {
 		target, e := s.backend()
@@ -37,9 +48,18 @@ func (s *Server) download(ctx context.Context, raw, name, authorization string) 
 		}
 		target.Path = relative.Path
 		target.RawQuery = relative.RawQuery
-		req, e := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+		method := http.MethodGet
+		if len(body) > 0 {
+			method = http.MethodPost
+		}
+		req, e := http.NewRequestWithContext(ctx, method, target.String(), bytes.NewReader(body))
 		if e != nil {
 			return nil, 0, e
+		}
+		if len(body) > 0 {
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-CSRF-Token", csrf)
+			req.Header.Set("X-Qraft-Client", "1")
 		}
 		if authorization != "" {
 			req.Header.Set("Authorization", authorization)

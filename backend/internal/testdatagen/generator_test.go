@@ -126,14 +126,14 @@ func TestToolsGenerateWithoutModelAndFailAtomically(t *testing.T) {
 	for i := range cases {
 		cases[i] = Case{Index: i, GroupID: 3, Purpose: "boundary"}
 	}
-	a, err := tools.GenerateCases(context.Background(), recipe, cases, 0)
+	a, err := tools.GenerateCases(context.Background(), recipe, cases, 1<<20)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(fake.sizes, []int{8, 8, 4}) {
 		t.Fatalf("batch sizes=%v", fake.sizes)
 	}
-	b, err := tools.GenerateCases(context.Background(), recipe, cases, 0)
+	b, err := tools.GenerateCases(context.Background(), recipe, cases, 1<<20)
 	if err != nil || !reflect.DeepEqual(a.Cases, b.Cases) {
 		t.Fatal("replay mismatch")
 	}
@@ -154,7 +154,7 @@ func TestToolsGenerateWithoutModelAndFailAtomically(t *testing.T) {
 		return r
 	}
 	fake.calls = 0
-	if result, err := tools.GenerateCases(context.Background(), recipe, cases, 0); err == nil || result != nil {
+	if result, err := tools.GenerateCases(context.Background(), recipe, cases, 1<<20); err == nil || result != nil {
 		t.Fatal("partial generation escaped")
 	}
 	fake.execute = func(_ string, inputs []string, _ remotesandbox.RemoteLimits) *remotesandbox.RemoteExecuteResult {
@@ -216,7 +216,7 @@ func TestToolInputBudgets(t *testing.T) {
 	tools := Tools{fake}
 	recipe := Recipe{Version: Version, Code: testCode}
 	for _, cases := range [][]Case{nil, {{Index: -1, Purpose: "x"}}, {{Index: 0}}, {{Index: 0, Purpose: "x"}, {Index: 0, Purpose: "y"}}} {
-		if _, err := tools.GenerateCases(context.Background(), recipe, cases, 0); err == nil {
+		if _, err := tools.GenerateCases(context.Background(), recipe, cases, 1<<20); err == nil {
 			t.Fatal("bad plan accepted")
 		}
 	}
@@ -245,5 +245,35 @@ func TestTokenComparisonDoesNotCollapseTokenBoundaries(t *testing.T) {
 	}
 	if result.Passed || result.Findings[0].Verdict != "WA" || result.Findings[0].Actual != "a\x00b\n" || result.Findings[0].Expected != "a b\n" {
 		t.Fatal("token mismatch or executable witness lost")
+	}
+}
+
+func TestDefaultBudgetAcceptsLargeCasesWithoutExceedingTransport(t *testing.T) {
+	fake := &fakeExecutor{execute: func(_ string, inputs []string, limits remotesandbox.RemoteLimits) *remotesandbox.RemoteExecuteResult {
+		if len(inputs) != 1 || limits.OutputLimitBytes != 8<<20 {
+			t.Fatalf("limits=%+v inputs=%d", limits, len(inputs))
+		}
+		result := okBatch(inputs)
+		result.Results[0].Stdout = strings.Repeat("7 ", 3<<20) + "\n"
+		return result
+	}}
+	result, err := (Tools{fake}).GenerateCases(context.Background(), Recipe{Version: Version, Code: testCode}, []Case{{Index: 0, Purpose: "maximum boundary"}, {Index: 1, Purpose: "random stress"}}, 0)
+	if err != nil || len(result.Cases) != 2 || len(result.Cases[0].Input) < 6<<20 {
+		t.Fatalf("large default data rejected: %v", err)
+	}
+}
+
+func TestLargeTextCaseRunsAloneWithoutIncreasingSmallCaseBatchBudget(t *testing.T) {
+	for _, tc := range []struct {
+		limit int64
+		want  int
+	}{{2 << 20, 4}, {8 << 20, 1}, {20 << 20, 1}, {32 << 20, 1}} {
+		got, err := BatchSize(tc.limit)
+		if err != nil || got != tc.want {
+			t.Fatalf("limit=%d got=%d err=%v", tc.limit, got, err)
+		}
+	}
+	if _, err := BatchSize((32 << 20) + 1); err == nil {
+		t.Fatal("oversized case budget accepted")
 	}
 }

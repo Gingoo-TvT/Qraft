@@ -18,12 +18,19 @@ import (
 	"github.com/Gingoo-TvT/Qraft/backend/internal/repository"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
+	"go.temporal.io/sdk/activity"
 )
 
 // Dependencies bundles all external dependencies that activities need. It is
 // constructed once at worker startup and shared across all activity executions.
 type Dependencies struct {
+	// PersistWorkflowOwner durably records the authenticated owner for a
+	// workflow before its result is written. The worker supplies this callback
+	// so activities can repair child ownership after Temporal retention without
+	// changing workflow payloads or replay history.
+	PersistWorkflowOwner    func(context.Context, string) error
 	RatingStore             rating.Store
+	ProblemSetRepo          *repository.ProblemSetRepository
 	LLM                     LLMCompleter
 	LLMProvider             string
 	LLMModel                string
@@ -60,6 +67,26 @@ type Dependencies struct {
 	HiddenRegressionExecutor HiddenRegressionExecutorV1
 	RepairRevisionGenerator  RepairRevisionGeneratorV1
 	SandboxCfg               config.SandboxConfig
+}
+
+func workflowExecutionID(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	return activity.GetInfo(ctx).WorkflowExecution.ID
+}
+
+func (a *Activities) persistWorkflowOwner(ctx context.Context, workflowID string) error {
+	if a == nil || a.deps == nil || a.deps.PersistWorkflowOwner == nil {
+		return nil
+	}
+	if strings.TrimSpace(workflowID) == "" {
+		return nil
+	}
+	if err := a.deps.PersistWorkflowOwner(ctx, workflowID); err != nil {
+		return fmt.Errorf("persist workflow owner: %w", err)
+	}
+	return nil
 }
 
 type LLMCompleter interface {
@@ -403,6 +430,11 @@ type TestDataResult struct {
 
 // ExecutionLimits specifies resource constraints for sandbox execution.
 type ExecutionLimits struct {
+	// Imported exercises may advertise a larger memory limit than this server.
+	// An opt-in retry can use a stricter deployment ceiling; original problem
+	// limits remain unchanged and the sandbox audit records actual execution.
+	UseDeploymentLimits bool `json:"use_deployment_limits,omitempty"`
+
 	TimeLimitMs   int `json:"time_limit_ms"`
 	MemoryLimitMB int `json:"memory_limit_mb"`
 	// OutputLimitBytes is additive. S3 uses a fixed value across differently
@@ -423,10 +455,18 @@ type SandboxResult struct {
 	OutputArtifacts []*ArtifactRef `json:"output_artifacts,omitempty"`
 	// OutputRefs is retained only so in-flight legacy workflow histories can
 	// replay. New activity results must use OutputArtifacts.
-	OutputRefs []string             `json:"output_refs,omitempty"`
-	TimeTaken  []time.Duration      `json:"time_taken"`
-	MemoryUsed []int64              `json:"memory_used"`
-	Audit      SandboxAuditMetadata `json:"audit"`
+	OutputRefs []string                `json:"output_refs,omitempty"`
+	TimeTaken  []time.Duration         `json:"time_taken"`
+	MemoryUsed []int64                 `json:"memory_used"`
+	Audit      SandboxAuditMetadata    `json:"audit"`
+	Batches    []SandboxExecutionBatch `json:"batches,omitempty"`
+}
+
+// Case offsets are relative to this result, including a selected brute subset.
+type SandboxExecutionBatch struct {
+	FirstCase int                  `json:"first_case"`
+	CaseCount int                  `json:"case_count"`
+	Audit     SandboxAuditMetadata `json:"audit"`
 }
 
 type SandboxAuditMetadata struct {
@@ -512,6 +552,7 @@ type FinalizeStatementSamplesInput struct {
 
 // StoreInput bundles all the data needed to persist a problem.
 type StoreInput struct {
+	ImportSource     *domain.ImportSourceEvidence  `json:"import_source,omitempty"`
 	PayloadVersion   int                           `json:"payload_version"`
 	IdempotencyKey   string                        `json:"idempotency_key"`
 	WorkflowID       string                        `json:"workflow_id"`

@@ -1,10 +1,15 @@
 import { lazy, type ComponentType } from 'react';
 
 export const pages: Record<string, ComponentType> = {
+ '/account': lazy(() => import('@/app/account/page')),
+ '/account/login': lazy(() => import('@/app/account/login/page')),
+ '/account/invitation': lazy(() => import('@/app/account/invitation/page')),
+ '/admin/users': lazy(() => import('@/app/admin/users/page')),
  '/rating': lazy(() => import('@/app/rating/page')),
  '/rating/review': lazy(() => import('@/app/rating/review/page')),
  '/search': lazy(() => import('@/app/search/page')),
  '/problems': lazy(() => import('@/app/problems/page')),
+ '/problems/import': lazy(() => import('@/app/problems/import/page')),
  '/problems/new': lazy(() => import('@/app/problems/new/page')),
  '/problems/quarantine': lazy(() => import('@/app/problems/quarantine/page')),
  '/problems/gplt': lazy(() => import('@/app/problems/gplt/page')),

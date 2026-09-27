@@ -52,7 +52,7 @@ jobs:
           go run ./cmd/migrate up
           go run ./cmd/migrate up
           # These packages share the disposable database; serialize recent-set assertions.
-          go test -p 1 -tags=integration ./internal/repository ./internal/service ./internal/handler -run 'TestProblemSet|TestAssemblyBank|TestQuestionSearch|TestRating' -count=1 -v
+          go test -p 1 -tags=integration ./internal/identity ./internal/repository ./internal/service ./internal/handler -run 'TestIdentity|TestAuth|TestWorkflowOwner|TestSetAndQuizShared|TestShared|TestProblemSet|TestProblemImport|TestAssemblyBank|TestQuestionSearch|TestRating|TestEmbeddingActivation' -count=1 -v
 
 
   sandbox:
@@ -93,6 +93,10 @@ jobs:
       - run: npm run test:search
       - run: npm run test:desktop
       - run: npm run test:rating
+      - run: npm run test:auth
+      - run: npm run test:embedding
+      - run: npm run test:model-overrides
+      - run: npm run test:imports
       - run: npm run build
       - run: npm run build:desktop
 
@@ -112,6 +116,13 @@ jobs:
           python3 scripts/configure.py
           docker compose config --quiet
           docker compose -f docker-compose.yml -f docker-compose.local.yml config --quiet
+      - name: Verify public HTTPS configuration
+        run: |
+          python3 scripts/configure.py --cloud-host 8.8.8.8
+          docker compose -f docker-compose.yml -f docker-compose.cloud.yml config --format json > "$RUNNER_TEMP/qraft-cloud.json"
+          CADDY_CHECK_IMAGE=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["services"]["caddy"]["image"])' "$RUNNER_TEMP/qraft-cloud.json")
+          docker run --rm --network none -e QRAFT_PUBLIC_HOST=8.8.8.8 -v "$PWD/deploy/caddy/Caddyfile.cloud:/etc/caddy/Caddyfile:ro" "$CADDY_CHECK_IMAGE" caddy validate --config /etc/caddy/Caddyfile
+          rm "$RUNNER_TEMP/qraft-cloud.json"
 
   container-build:
     runs-on: ubuntu-latest

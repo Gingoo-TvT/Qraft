@@ -10,7 +10,7 @@ import (
 
 func TestRatingInvitationHeaderIsAllowedWithoutAuthorization(t *testing.T) {
 	e := echo.New()
-	e.Use(CORS(DefaultCORSConfig()))
+	e.Use(CORS(CORSConfig{AllowOrigins: []string{"https://review.qraft.invalid"}}))
 	e.GET("/api/v1/public/rating/review", func(c echo.Context) error { return c.NoContent(200) })
 	req := httptest.NewRequest(http.MethodOptions, "/api/v1/public/rating/review", nil)
 	req.Header.Set("Origin", "https://review.qraft.invalid")

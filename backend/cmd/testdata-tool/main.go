@@ -86,7 +86,7 @@ const description = `{
     },
     {
       "name":"generate_cases",
-      "description":"Run a saved recipe without LLM calls. Omitted seed derives from source/index/group. Up to 32 cases; default 1 MiB per input, 32 MiB total. Save recipe and seeds to reproduce.",
+      "description":"Run a saved recipe without LLM calls. Omitted seed derives from source/index/group. Up to 32 cases; default 8 MiB per input, 32 MiB total. Save recipe and seeds to reproduce.",
       "request":{"tool":"generate_cases","recipe":{"version":"algoforge.testdata.v1","code":"void generate(long long i, long long g, af::Random& rng, std::ostream& out) { out << rng.integer(1, 100) << '\\n'; }"},"cases":[{"index":0,"group_id":0,"seed":42,"purpose":"small boundary"}],"output_limit_bytes":1048576}
     },
     {

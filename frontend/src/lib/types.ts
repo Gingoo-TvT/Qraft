@@ -11,7 +11,7 @@ export interface APIResponse<T> {
   success: boolean;
   data?: T;
   error?: { code: string; message: string };
-  meta?: { total: number; page: number; size: number };
+  meta?: { total?: number; page?: number; size?: number; next_page_token?: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -675,6 +675,15 @@ export interface EmbeddingRuntimeSettings {
   updated_at?: string;
 }
 
+export interface SavedEmbeddingRuntimeSettings {
+  configured: boolean;
+  base_url?: string;
+  model?: string;
+  dimensions?: number;
+  timeout_sec?: number;
+  model_version_id?: string;
+}
+
 export type EmbeddingKind = 'statement' | 'solution';
 
 export interface LocalEmbeddingEndpointConfig {
@@ -733,7 +742,7 @@ export interface ActivePointerSwitchReport {
   dry_run: boolean;
   committed: boolean;
   embedding_kind: EmbeddingKind | string;
-  old_model_version_id: string;
+  old_model_version_id: string | null;
   new_model_version_id: string;
   actor: string;
   reason: string;
@@ -1099,6 +1108,7 @@ export interface ProblemSetItem {
 }
 
 export interface ProblemSet {
+  owner_user_id?: string;
   generation_config?: ProblemSetGenerationConfig;
   generation?: ProblemSetGenerationState;
   generation_error?: string;
@@ -1129,6 +1139,7 @@ export interface ProblemSet {
 }
 
 export interface ProblemSetCreateRequest {
+  items?: ProblemSetAddItemRequest[];
   generation_config?: ProblemSetGenerationConfig;
   start_generation?: boolean;
   code?: string;

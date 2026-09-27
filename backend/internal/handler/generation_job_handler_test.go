@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/Gingoo-TvT/Qraft/backend/internal/access"
+	authmw "github.com/Gingoo-TvT/Qraft/backend/internal/handler/middleware"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -732,7 +734,7 @@ func generationJobTestIdentity(t *testing.T, body string, key string) (string, s
 	require.NoError(t, json.Unmarshal([]byte(body), &request))
 	_, payloadSHA256, err := request.CanonicalPayload()
 	require.NoError(t, err)
-	jobID, principalSHA256, err := generationapi.JobIDForIdempotencyKey("local-dev", key)
+	jobID, principalSHA256, err := generationapi.JobIDForIdempotencyKey("user:local-test", key)
 	require.NoError(t, err)
 	return jobID, payloadSHA256, principalSHA256
 }
@@ -860,6 +862,8 @@ func invokeGenerationJobHandler(
 	}
 	recorder := httptest.NewRecorder()
 	ctx := e.NewContext(request, recorder)
+	ctx.Set("user", &authmw.JWTClaims{UserID: "local-test", Role: "member"})
+	ctx.SetRequest(request.WithContext(access.WithPrincipal(request.Context(), access.Principal{UserID: "local-test", Role: "member"})))
 	if jobID != "" {
 		ctx.SetParamNames("id")
 		ctx.SetParamValues(jobID)

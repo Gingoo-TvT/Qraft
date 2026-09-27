@@ -2,8 +2,10 @@ package handler
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -36,9 +38,7 @@ func (h *ProblemSetHandler) HandleCreate(c echo.Context) error {
 		}
 		req.GeneratePrompt = false
 	}
-	if req.CreatedBy == "" {
-		req.CreatedBy = editActor(c)
-	}
+	req.CreatedBy = editActor(c)
 	set, err := h.svc.Create(c.Request().Context(), req)
 	if err != nil {
 		return handleProblemSetError(c, err, "failed to create problem set")
@@ -132,6 +132,24 @@ func (h *ProblemSetHandler) HandleAddItem(c echo.Context) error {
 	return created(c, set)
 }
 
+func (h *ProblemSetHandler) HandleAddItems(c echo.Context) error {
+	setID, err := parseUUID(c, "id")
+	if err != nil {
+		return err
+	}
+	var req struct {
+		Items []service.ProblemSetAddItemRequest `json:"items"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return badRequest(c, "INVALID_BODY", "无法读取选题列表")
+	}
+	set, err := h.svc.AddItems(c.Request().Context(), setID, req.Items)
+	if err != nil {
+		return handleProblemSetError(c, err, "failed to add selected items")
+	}
+	return ok(c, set)
+}
+
 func (h *ProblemSetHandler) HandleRemoveItem(c echo.Context) error {
 	setID, err := parseUUID(c, "id")
 	if err != nil {
@@ -200,7 +218,38 @@ func (h *ProblemSetHandler) HandleExport(c echo.Context) error {
 	if err != nil {
 		return badRequest(c, "INVALID_PARAMS", "allow_reuse must be true or false")
 	}
-	result, err := h.svc.Export(c.Request().Context(), id, allowReuse)
+	mode, format := c.QueryParam("mode"), c.QueryParam("format")
+	var options service.TestingExportOptions
+	if c.Request().Method == http.MethodPost {
+		if mode != "testing" || format != "generic" {
+			return badRequest(c, "INVALID_PARAMS", "POST export only supports generic testing ZIP")
+		}
+		var request service.TestingExportRequest
+		decoder := json.NewDecoder(http.MaxBytesReader(c.Response(), c.Request().Body, 1<<20))
+		decoder.DisallowUnknownFields()
+		if decodeErr := decoder.Decode(&request); decodeErr != nil {
+			return badRequest(c, "INVALID_BODY", "导出参数无效或超过 1 MiB")
+		}
+		if decodeErr := decoder.Decode(new(interface{})); decodeErr != io.EOF {
+			return badRequest(c, "INVALID_BODY", "导出参数必须是单个 JSON 对象")
+		}
+		options.TagCatalog, err = service.ParseOJTagCatalog(request.TagCatalog)
+		if err != nil {
+			return badRequest(c, "INVALID_BODY", err.Error())
+		}
+	}
+	var result *service.ProblemSetExportResult
+	switch mode {
+	case "testing":
+		result, err = h.svc.ExportTesting(c.Request().Context(), id, format, options)
+	case "", "publication":
+		if format != "" && format != "qraft" {
+			return badRequest(c, "INVALID_PARAMS", "generic and hydro formats require mode=testing")
+		}
+		result, err = h.svc.Export(c.Request().Context(), id, allowReuse)
+	default:
+		return badRequest(c, "INVALID_PARAMS", "mode must be testing or publication")
+	}
 	if err != nil {
 		return handleProblemSetError(c, err, "failed to build problem-set package")
 	}
@@ -209,6 +258,9 @@ func (h *ProblemSetHandler) HandleExport(c echo.Context) error {
 	}
 	c.Response().Header().Set(echo.HeaderContentDisposition, fmt.Sprintf(`attachment; filename="%s"`, result.Package.FileName))
 	c.Response().Header().Set("X-AlgoForge-Export-Profile", result.Package.Profile)
+	if mode == "testing" {
+		c.Response().Header().Set("X-Qraft-Export-Mode", "testing")
+	}
 	c.Response().Header().Set("X-AlgoForge-Problem-Set-Quality", qualityHeader(result.Quality))
 	return c.Blob(http.StatusOK, "application/zip", result.Package.Content)
 }
@@ -227,11 +279,13 @@ func RegisterProblemSetRoutes(group *echo.Group, handler *ProblemSetHandler) {
 	group.POST("/problem-sets", handler.HandleCreate)
 	group.GET("/problem-sets", handler.HandleList)
 	group.POST("/problem-sets/:id/items", handler.HandleAddItem)
+	group.POST("/problem-sets/:id/items/batch", handler.HandleAddItems)
 	group.PUT("/problem-sets/:id/items/reorder", handler.HandleReorder)
 	group.DELETE("/problem-sets/:id/items/:item_id", handler.HandleRemoveItem)
 	group.GET("/problem-sets/:id/quality", handler.HandleQuality)
 	group.POST("/problem-sets/:id/generate-prompt", handler.HandleGeneratePrompt)
 	group.GET("/problem-sets/:id/export.zip", handler.HandleExport)
+	group.POST("/problem-sets/:id/export.zip", handler.HandleExport)
 	group.GET("/problem-sets/:id", handler.HandleGet)
 	group.PUT("/problem-sets/:id", handler.HandleUpdate)
 	group.DELETE("/problem-sets/:id", handler.HandleDelete)

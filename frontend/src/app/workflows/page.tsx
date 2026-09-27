@@ -1,11 +1,11 @@
 'use client';
 
+import { useAuth } from '@/components/auth/AuthProvider';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Activity, AlertCircle, ArrowUpRight, CheckCircle2, Clock, Loader2, Pause, Plus, XCircle } from 'lucide-react';
 
 import RefreshButton from '@/components/RefreshButton';
-import Pagination from '@/components/Pagination';
 import { EmptyState, PageHeader } from '@/components/ui/Workspace';
 import { useWorkflows } from '@/hooks/useWorkflow';
 import { cn, formatDate, formatRelativeTime, statusBadgeColor } from '@/lib/utils';
@@ -34,16 +34,19 @@ function StatusIcon({ status }: { status: string }) {
 }
 
 export default function WorkflowsPage() {
+  const { isAdmin } = useAuth();
   const [statusFilter, setStatusFilter] = useState('');
-  const [page, setPage] = useState(1);
+  const [cursors, setCursors] = useState<string[]>(['']);
+  const page = cursors.length;
+  const cursor = cursors[page - 1];
   const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
-  const { workflows, total, loading, error, refresh, setParams } = useWorkflows({
-    page, size, status: statusFilter || undefined,
+  const { workflows, nextCursor, loading, error, refresh, setParams } = useWorkflows({
+    cursor, size, status: statusFilter || undefined,
   });
 
   useEffect(() => {
-    setParams({ page, size, status: statusFilter || undefined });
-  }, [page, size, statusFilter, setParams]);
+    setParams({ cursor, size, status: statusFilter || undefined });
+  }, [cursor, size, statusFilter, setParams]);
 
   const hasRunning = workflows.some((workflow) => normalizeStatus(workflow.status) === 'running');
   const refreshIntervalRef = useRef<ReturnType<typeof setInterval>>();
@@ -57,7 +60,7 @@ export default function WorkflowsPage() {
 
   return (
     <div className="af-page">
-      <PageHeader eyebrow="工作空间" title="任务中心" description="查看生成进度、执行结果和审核记录。任务在后台持续运行。"
+      <PageHeader eyebrow="工作空间" title={isAdmin ? "任务中心" : "我的任务"} description={isAdmin ? "管理团队的生成进度、执行结果和审核记录。" : "仅显示你创建的任务；生成在服务端持续运行。"}
         actions={<Link href="/problems/new" className="forge-btn-primary"><Plus className="h-4 w-4" />创建题目</Link>}
       />
 
@@ -70,12 +73,12 @@ export default function WorkflowsPage() {
           <div className="af-segmented" role="group" aria-label="按任务状态筛选">
             {STATUS_TABS.map((tab) => <button key={tab.value} aria-pressed={statusFilter === tab.value}
               className={statusFilter === tab.value ? 'is-active' : ''}
-              onClick={() => { setStatusFilter(tab.value); setPage(1); }}>{tab.label}</button>)}
+              onClick={() => { setStatusFilter(tab.value); setCursors(['']); }}>{tab.label}</button>)}
           </div>
           <RefreshButton onClick={refresh} loading={loading} />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--dl)] px-5 py-3 text-sm text-[var(--dm)]">
-          <span>{loading && workflows.length === 0 ? '正在读取任务…' : error ? '暂时无法读取任务数量' : <>共 <strong className="font-medium text-[var(--dt)]">{total}</strong> 个{statusFilter ? STATUS_TABS.find((tab) => tab.value === statusFilter)?.label : ''}任务</>}</span>
+          <span>{loading && workflows.length === 0 ? '正在读取任务…' : error ? '暂时无法读取任务数量' : <>本页 <strong className="font-medium text-[var(--dt)]">{workflows.length}</strong> 个{statusFilter ? STATUS_TABS.find((tab) => tab.value === statusFilter)?.label : ''}任务</>}</span>
           {hasRunning ? <span className="inline-flex items-center gap-2"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--da)]" />本页任务每 5 秒刷新</span> : <span>选择任务，查看执行与审核详情</span>}
         </div>
 
@@ -87,7 +90,7 @@ export default function WorkflowsPage() {
                 : workflows.length === 0 ? <tr><td colSpan={5}><EmptyState icon={Activity}
                   title={error ? '暂时无法查看任务' : statusFilter ? '没有这个状态的任务' : '你的创作任务会显示在这里'}
                   description={error ? '恢复服务连接后，可以继续查看执行记录。' : statusFilter ? '切换状态查看其他任务，或创建一道新题。' : '创建题目后，生成、验算和审核进度都会保存在任务记录里。'}
-                  action={error ? <button className="forge-btn-secondary" onClick={refresh}>重新加载</button> : statusFilter ? <button className="forge-btn-secondary" onClick={() => { setStatusFilter(''); setPage(1); }}>查看全部任务</button> : <Link href="/problems/new" className="forge-btn-primary"><Plus className="h-4 w-4" />创建题目</Link>}
+                  action={error ? <button className="forge-btn-secondary" onClick={refresh}>重新加载</button> : statusFilter ? <button className="forge-btn-secondary" onClick={() => { setStatusFilter(''); setCursors(['']); }}>查看全部任务</button> : <Link href="/problems/new" className="forge-btn-primary"><Plus className="h-4 w-4" />创建题目</Link>}
                 /></td></tr>
                 : workflows.map((workflow) => {
                   const friendly = normalizeStatus(workflow.status);
@@ -95,9 +98,9 @@ export default function WorkflowsPage() {
                     <td className="min-w-[240px]">
                       <div className="flex items-center gap-2">
                         <StatusIcon status={workflow.status} />
-                        <span className={cn('forge-badge', statusBadgeColor(friendly))}>{STATUS_LABELS[friendly] ?? friendly}</span>
+                        <span className={cn('forge-badge', statusBadgeColor(friendly))}>{workflow.workflow_id.startsWith('problem-import-') && friendly === 'approved' ? '已完成' : STATUS_LABELS[friendly] ?? friendly}</span>
                       </div>
-                      <Link href={workflow.workflow_id.startsWith("rating-") ? "/rating?assessment=" + encodeURIComponent(workflow.workflow_id.slice(7)) : "/workflows/" + workflow.workflow_id} className="af-link mt-2 block max-w-[360px] break-all font-mono text-xs" title={workflow.workflow_id}>{workflow.workflow_id}</Link>
+                      <Link href={workflow.workflow_id.startsWith("rating-") ? "/rating?assessment=" + encodeURIComponent(workflow.workflow_id.slice(7)) : /^problem-import-[0-9a-f-]{36}$/.test(workflow.workflow_id) ? "/problems/import?workflow=" + encodeURIComponent(workflow.workflow_id) : "/workflows/" + workflow.workflow_id} className="af-link mt-2 block max-w-[360px] break-all font-mono text-xs" title={workflow.workflow_id}>{workflow.workflow_id}</Link>
                     </td>
                     <td>{workflow.start_time ? <time dateTime={workflow.start_time} title={formatDate(workflow.start_time)}>
                       <span className="block">{formatRelativeTime(workflow.start_time)}</span>
@@ -110,13 +113,24 @@ export default function WorkflowsPage() {
                     <td>{workflow.failure_reason ? <p className="line-clamp-2 max-w-[240px] text-sm text-danger-500" title={workflow.failure_reason}>{workflow.failure_reason}</p>
                       : workflow.state?.problem_id ? <Link className="af-link inline-flex items-center gap-1" href={`/problems/${workflow.state.problem_id}`}>打开生成题目<ArrowUpRight className="h-3.5 w-3.5" /></Link>
                         : <span className="text-sm text-[var(--dm)]">在详情中查看执行记录</span>}</td>
-                    <td><Link href={workflow.workflow_id.startsWith("rating-") ? "/rating?assessment=" + encodeURIComponent(workflow.workflow_id.slice(7)) : "/workflows/" + workflow.workflow_id} className="af-link whitespace-nowrap">查看详情</Link></td>
+                    <td><Link href={workflow.workflow_id.startsWith("rating-") ? "/rating?assessment=" + encodeURIComponent(workflow.workflow_id.slice(7)) : /^problem-import-[0-9a-f-]{36}$/.test(workflow.workflow_id) ? "/problems/import?workflow=" + encodeURIComponent(workflow.workflow_id) : "/workflows/" + workflow.workflow_id} className="af-link whitespace-nowrap">查看详情</Link></td>
                   </tr>;
                 })}
             </tbody>
           </table>
         </div>
-        <div className="af-pagination"><Pagination page={page} total={total} size={size} onPageChange={setPage} onSizeChange={(nextSize) => { setSize(nextSize); setPage(1); }} /></div>
+        <nav className="af-pagination flex flex-wrap items-center justify-between gap-3" aria-label="任务分页">
+          <label className="flex items-center gap-2 text-sm text-[var(--dm)]">每页
+            <select className="forge-input w-auto" aria-label="每页任务数量" value={size} disabled={loading} onChange={event => { setSize(Number(event.target.value)); setCursors(['']); }}>
+              {[10, 20, 50, 100].map(value => <option key={value} value={value}>{value} 条</option>)}
+            </select>
+          </label>
+          <div className="flex items-center gap-3">
+            <button className="forge-btn-secondary" disabled={loading || page === 1} onClick={() => setCursors(current => current.slice(0, -1))}>上一页</button>
+            <span className="text-sm" aria-live="polite">第 {page} 页</span>
+            <button className="forge-btn-secondary" disabled={loading || !!error || !nextCursor} onClick={() => setCursors(current => [...current, nextCursor])}>下一页</button>
+          </div>
+        </nav>
       </section>
     </div>
   );

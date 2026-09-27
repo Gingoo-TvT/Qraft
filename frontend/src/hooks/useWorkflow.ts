@@ -306,12 +306,14 @@ export function useWorkflowEvents(workflowId: string | undefined): UseWorkflowEv
 // ---------------------------------------------------------------------------
 
 interface WorkflowListParams {
+  cursor?: string;
   page?: number;
   size?: number;
   status?: string;
 }
 
 interface UseWorkflowListReturn {
+  nextCursor: string;
   workflows: WorkflowState[];
   total: number;
   loading: boolean;
@@ -327,6 +329,7 @@ export function useWorkflowList(
   const [params, setParams] = useState<WorkflowListParams>(initialParams ?? {});
   const [workflows, setWorkflows] = useState<WorkflowState[]>([]);
   const [total, setTotal] = useState(0);
+  const [nextCursor, setNextCursor] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -342,7 +345,8 @@ export function useWorkflowList(
       const res = await apiListWorkflows(params);
       if (fetchId !== fetchIdRef.current) return;
       setWorkflows(res.data ?? []);
-      setTotal(res.meta?.total ?? 0);
+      setTotal(res.meta?.total ?? res.data?.length ?? 0);
+      setNextCursor(res.meta?.next_page_token ?? '');
     } catch (err) {
       if (fetchId !== fetchIdRef.current) return;
       setError(
@@ -360,6 +364,7 @@ export function useWorkflowList(
 
   return {
     workflows,
+    nextCursor,
     total,
     loading,
     error,

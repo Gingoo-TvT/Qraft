@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Gingoo-TvT/Qraft/backend/internal/access"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/llm"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/repository"
@@ -64,12 +65,13 @@ type problemSetLLM interface {
 type ProblemSetLLMRuntimeResolver func(context.Context) (*domain.LLMRuntimeConfig, error)
 
 type ProblemSetService struct {
-	repo       problemSetStore
-	problems   problemSetProblemReader
-	quizzes    problemSetQuizReader
-	packageSvc problemSetPackageBuilder
-	llm        problemSetLLM
-	resolveLLM ProblemSetLLMRuntimeResolver
+	permissions *WorkflowAccess
+	repo        problemSetStore
+	problems    problemSetProblemReader
+	quizzes     problemSetQuizReader
+	packageSvc  problemSetPackageBuilder
+	llm         problemSetLLM
+	resolveLLM  ProblemSetLLMRuntimeResolver
 }
 
 func NewProblemSetService(
@@ -92,6 +94,47 @@ func NewProblemSetServiceWithDeps(
 	return &ProblemSetService{repo: repo, problems: problems, quizzes: quizzes, packageSvc: packageSvc, llm: llmClient}
 }
 
+func (s *ProblemSetService) SetWorkflowAccess(a *WorkflowAccess) { s.permissions = a }
+func (s *ProblemSetService) authorizeSet(ctx context.Context, set *domain.ProblemSet, write bool) error {
+	if s.permissions == nil {
+		return nil
+	}
+	p, ok := access.FromContext(ctx)
+	if !ok {
+		return ErrNotFound
+	}
+	if p.IsAdmin() {
+		return nil
+	}
+	if write {
+		if set.OwnerUserID != p.UserID || set.Visibility == domain.ProblemSetVisibilityPublic {
+			return ErrNotFound
+		}
+	} else if set.Visibility != domain.ProblemSetVisibilityPublic && set.OwnerUserID != p.UserID {
+		return ErrNotFound
+	}
+	return nil
+}
+func (s *ProblemSetService) requireSetAccess(ctx context.Context, id uuid.UUID, write bool) error {
+	if s.permissions == nil {
+		return nil
+	}
+	set, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return ErrNotFound
+	}
+	return s.authorizeSet(ctx, set, write)
+}
+func (s *ProblemSetService) redactSetTask(ctx context.Context, set *domain.ProblemSet) {
+	if s.permissions == nil || set == nil {
+		return
+	}
+	p, ok := access.FromContext(ctx)
+	if !ok || (!p.IsAdmin() && set.OwnerUserID != p.UserID) {
+		set.Generation = nil
+		set.GenerationError = ""
+	}
+}
 func (s *ProblemSetService) SetLLMRuntimeResolver(resolver ProblemSetLLMRuntimeResolver) {
 	if s != nil {
 		s.resolveLLM = resolver
@@ -99,6 +142,7 @@ func (s *ProblemSetService) SetLLMRuntimeResolver(resolver ProblemSetLLMRuntimeR
 }
 
 type ProblemSetCreateRequest struct {
+	Items            []ProblemSetAddItemRequest         `json:"items,omitempty"`
 	StartGeneration  bool                               `json:"start_generation"`
 	Code             string                             `json:"code"`
 	Title            string                             `json:"title"`
@@ -156,6 +200,15 @@ type ProblemSetExportResult struct {
 }
 
 func (s *ProblemSetService) Create(ctx context.Context, req ProblemSetCreateRequest) (*domain.ProblemSet, error) {
+	if p, ok := access.FromContext(ctx); ok {
+		req.CreatedBy = p.UserID
+		if !p.IsAdmin() {
+			req.Visibility = domain.ProblemSetVisibilityPrivate
+		}
+	} else if s.permissions != nil {
+		return nil, ErrNotFound
+	}
+
 	if s == nil || s.repo == nil {
 		return nil, fmt.Errorf("problem set service is unavailable")
 	}
@@ -181,6 +234,23 @@ func (s *ProblemSetService) Create(ctx context.Context, req ProblemSetCreateRequ
 	if set.CreatedBy == "" {
 		set.CreatedBy = "api"
 	}
+	if p, ok := access.FromContext(ctx); ok {
+		set.OwnerUserID = p.UserID
+	}
+
+	if len(req.Items) > 0 {
+		items, err := s.prepareSelectedItems(ctx, req.Items)
+		if err != nil {
+			return nil, err
+		}
+		set.Items = items
+		for _, item := range items {
+			set.TotalScore += item.Score
+		}
+		if set.DesiredItemCount == 0 {
+			set.DesiredItemCount = len(items)
+		}
+	}
 	if err := set.NormalizeProblemSet(); err != nil {
 		return nil, fmt.Errorf("validation: %w", err)
 	}
@@ -202,6 +272,9 @@ func (s *ProblemSetService) Create(ctx context.Context, req ProblemSetCreateRequ
 }
 
 func (s *ProblemSetService) Get(ctx context.Context, id uuid.UUID) (*domain.ProblemSet, error) {
+	if err := s.requireSetAccess(ctx, id, false); err != nil {
+		return nil, err
+	}
 	if s == nil || s.repo == nil {
 		return nil, fmt.Errorf("problem set service is unavailable")
 	}
@@ -220,6 +293,7 @@ func (s *ProblemSetService) Get(ctx context.Context, id uuid.UUID) (*domain.Prob
 		return nil, err
 	}
 	set.Quality = quality
+	s.redactSetTask(ctx, set)
 	return set, nil
 }
 
@@ -227,10 +301,22 @@ func (s *ProblemSetService) List(ctx context.Context, filter repository.ProblemS
 	if s == nil || s.repo == nil {
 		return nil, 0, fmt.Errorf("problem set service is unavailable")
 	}
-	return s.repo.List(ctx, filter)
+	if s.permissions != nil {
+		if _, ok := access.FromContext(ctx); !ok {
+			return nil, 0, ErrNotFound
+		}
+	}
+	sets, total, err := s.repo.List(ctx, filter)
+	for _, set := range sets {
+		s.redactSetTask(ctx, set)
+	}
+	return sets, total, err
 }
 
 func (s *ProblemSetService) Update(ctx context.Context, id uuid.UUID, req ProblemSetUpdateRequest) (*domain.ProblemSet, error) {
+	if err := s.requireSetAccess(ctx, id, true); err != nil {
+		return nil, err
+	}
 	set, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -274,6 +360,9 @@ func (s *ProblemSetService) Update(ctx context.Context, id uuid.UUID, req Proble
 		set.Kind = *req.Kind
 	}
 	if req.Visibility != nil {
+		if p, ok := access.FromContext(ctx); ok && !p.IsAdmin() && *req.Visibility != domain.ProblemSetVisibilityPrivate {
+			return nil, ErrNotFound
+		}
 		set.Visibility = *req.Visibility
 	}
 	if req.Subject != nil {
@@ -342,6 +431,9 @@ func (s *ProblemSetService) Update(ctx context.Context, id uuid.UUID, req Proble
 }
 
 func (s *ProblemSetService) Delete(ctx context.Context, id uuid.UUID) error {
+	if err := s.requireSetAccess(ctx, id, true); err != nil {
+		return err
+	}
 	if err := s.repo.Delete(ctx, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
@@ -352,6 +444,9 @@ func (s *ProblemSetService) Delete(ctx context.Context, id uuid.UUID) error {
 }
 
 func (s *ProblemSetService) AddItem(ctx context.Context, setID uuid.UUID, req ProblemSetAddItemRequest) (*domain.ProblemSet, error) {
+	if err := s.requireSetAccess(ctx, setID, true); err != nil {
+		return nil, err
+	}
 	if (req.ProblemID == nil) == (req.QuizID == nil) {
 		return nil, fmt.Errorf("validation: exactly one of problem_id or quiz_id is required")
 	}
@@ -387,6 +482,9 @@ func (s *ProblemSetService) AddItem(ctx context.Context, setID uuid.UUID, req Pr
 }
 
 func (s *ProblemSetService) RemoveItem(ctx context.Context, setID, itemID uuid.UUID) (*domain.ProblemSet, error) {
+	if err := s.requireSetAccess(ctx, setID, true); err != nil {
+		return nil, err
+	}
 	if err := s.repo.RemoveItem(ctx, setID, itemID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -404,6 +502,9 @@ func (s *ProblemSetService) RemoveItem(ctx context.Context, setID, itemID uuid.U
 }
 
 func (s *ProblemSetService) Reorder(ctx context.Context, setID uuid.UUID, itemIDs []uuid.UUID) (*domain.ProblemSet, error) {
+	if err := s.requireSetAccess(ctx, setID, true); err != nil {
+		return nil, err
+	}
 	if len(itemIDs) == 0 {
 		return nil, fmt.Errorf("validation: item_ids must not be empty")
 	}
@@ -414,6 +515,9 @@ func (s *ProblemSetService) Reorder(ctx context.Context, setID uuid.UUID, itemID
 }
 
 func (s *ProblemSetService) GeneratePrompt(ctx context.Context, id uuid.UUID) (*domain.ProblemSet, error) {
+	if err := s.requireSetAccess(ctx, id, true); err != nil {
+		return nil, err
+	}
 	if s == nil || s.llm == nil || s.resolveLLM == nil {
 		return nil, fmt.Errorf("LLM problem-set prompt generation is not configured")
 	}
@@ -466,6 +570,9 @@ func (s *ProblemSetService) GeneratePrompt(ctx context.Context, id uuid.UUID) (*
 }
 
 func (s *ProblemSetService) Quality(ctx context.Context, id uuid.UUID) (*domain.ProblemSetQuality, error) {
+	if err := s.requireSetAccess(ctx, id, false); err != nil {
+		return nil, err
+	}
 	set, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -480,6 +587,9 @@ func (s *ProblemSetService) Quality(ctx context.Context, id uuid.UUID) (*domain.
 }
 
 func (s *ProblemSetService) Export(ctx context.Context, id uuid.UUID, allowReuse bool) (*ProblemSetExportResult, error) {
+	if err := s.requireSetAccess(ctx, id, false); err != nil {
+		return nil, err
+	}
 	if s == nil || s.repo == nil {
 		return nil, fmt.Errorf("problem set service is unavailable")
 	}

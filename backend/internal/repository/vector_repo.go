@@ -12,10 +12,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Gingoo-TvT/Qraft/backend/internal/access"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/lib/pq"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -355,6 +355,9 @@ func (r *VectorRepository) FindSimilarExceptForVersion(
 
 	vec := pgvector.NewVector(queryVec)
 	query := findSimilarExceptQuery()
+	if principal, ok := access.FromContext(ctx); ok && !principal.IsAdmin() {
+		query = strings.Replace(query, "WHERE pe.model_version_id", "WHERE p.status = 'published' AND pe.model_version_id", 1)
+	}
 
 	rows, err := r.db.Query(ctx, query, vec, modelVersionID, kind, excludeID, distanceThreshold, limit)
 	if err != nil {
@@ -399,6 +402,9 @@ func (r *VectorRepository) FindSimilarForVersion(
 
 	vec := pgvector.NewVector(queryVec)
 	query := findSimilarQuery()
+	if principal, ok := access.FromContext(ctx); ok && !principal.IsAdmin() {
+		query = strings.Replace(query, "WHERE pe.model_version_id", "WHERE p.status = 'published' AND pe.model_version_id", 1)
+	}
 
 	rows, err := r.db.Query(ctx, query, vec, modelVersionID, kind, distanceThreshold, limit)
 	if err != nil {
@@ -742,7 +748,7 @@ func scanSimilarProblemRows(rows interface {
 			&p.Difficulty,
 			&p.OneLineHint,
 			&p.DetailedSolution,
-			pq.Array(&p.Tags),
+			&p.Tags,
 			&p.Status,
 			&p.MetadataJSON,
 			&p.CreatedAt,

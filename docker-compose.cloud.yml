@@ -1,0 +1,49 @@
+# Docker Compose >= 2.24.4. Only Caddy publishes ports in this mode.
+# Use: docker compose -f docker-compose.yml -f docker-compose.cloud.yml ...
+services:
+  postgresql:
+    ports: !reset []
+  temporal-db:
+    ports: !reset []
+  redis:
+    ports: !reset []
+  minio:
+    ports: !reset []
+  temporal:
+    ports: !reset []
+  temporal-ui:
+    profiles: [admin-tools]
+    ports: !reset []
+  api:
+    ports: !reset []
+    environment:
+      APP_DEV_MODE: "false"
+      QRAFT_AUTH_SECURE_COOKIE: "true"
+      # Caddy overwrites X-Real-IP; the API has no published host port.
+      QRAFT_AUTH_TRUST_PROXY: "true"
+      QRAFT_ALLOWED_ORIGINS: ""
+  worker:
+    environment:
+      APP_DEV_MODE: "false"
+      QRAFT_AUTH_SECURE_COOKIE: "true"
+    depends_on:
+      sandbox:
+        condition: service_healthy
+  frontend:
+    ports: !reset []
+    build:
+      args:
+        NEXT_PUBLIC_API_URL: ""
+        NEXT_PUBLIC_WS_URL: ""
+    environment:
+      NEXT_PUBLIC_API_URL: ""
+      NEXT_PUBLIC_WS_URL: ""
+  caddy:
+    ports: !override
+      - "80:80"
+      - "443:443"
+    environment:
+      QRAFT_PUBLIC_HOST: ${QRAFT_PUBLIC_HOST:?Run configure.py --cloud-host with your public IPv4 or domain}
+      QRAFT_ACME_DIRECTORY: ${QRAFT_ACME_DIRECTORY:-https://acme-v02.api.letsencrypt.org/directory}
+    volumes:
+      - ./deploy/caddy/Caddyfile.cloud:/etc/caddy/Caddyfile:ro

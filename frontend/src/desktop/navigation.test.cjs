@@ -17,6 +17,9 @@ const link = ({ children, ...props }) => React.createElement('a', props, childre
 // Keep App's real route selection and layout. Only replace page bodies and
 // native/browser dependencies so this test needs neither a service nor a DOM.
 const mocks = {
+ '@/components/auth/AuthProvider': { AuthProvider: ({ children }) => children, useAuth: () => ({ isAdmin: true, session: { mode: 'local' } }) },
+ '@/components/auth/AuthBoundary': { __esModule: true, default: ({ children }) => children },
+ '@/lib/auth-session': { isAdminRoute: () => false },
  './Home': marker('home'),
  './Welcome': marker('welcome'),
  './Settings': marker('settings'),

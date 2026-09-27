@@ -1,5 +1,7 @@
 'use client';
 
+import { useAuth } from '@/components/auth/AuthProvider';
+import { isAdminRoute } from '@/lib/auth-session';
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -10,6 +12,7 @@ type NavItem = { label:string; href:string; icon:LucideIcon };
 const HOME: NavItem[] = [{ label:'工作台', href:'/', icon:LayoutDashboard }];
 const CREATE: NavItem[] = [
  { label:'创建题目', href:'/problems/new', icon:Plus },
+ { label:'链接与题目导入', href:'/problems/import', icon:Upload },
  { label:'生成题集', href:'/problem-sets/new', icon:Sparkles },
  { label:'题库组卷', href:'/problem-sets/assemble', icon:Layers3 },
 ];
@@ -37,11 +40,12 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate, desk
  collapsed:boolean; onCollapsedChange:(collapsed:boolean)=>void; onNavigate:()=>void; desktop?:boolean; footerExtra?:ReactNode;
 }) {
  const pathname = usePathname();
+ const { isAdmin, session } = useAuth();
  const match = ALL.filter(item => item.href === '/' ? pathname === '/' : pathname === item.href || pathname.startsWith(item.href + '/')).sort((a,b)=>b.href.length-a.href.length)[0]?.href;
  function links(items:NavItem[]) {
-  return items.map(({href,label,icon:Icon}) => <Link key={href} href={href} className={'af-nav-item' + (match === href ? ' active' : '')}
+  return items.filter(item => isAdmin || !isAdminRoute(item.href)).map(({href,label,icon:Icon}) => <Link key={href} href={href} className={'af-nav-item' + (match === href ? ' active' : '')}
    data-desktop-nav={desktop ? 'true' : undefined} aria-label={label} aria-current={match === href ? 'page' : undefined} title={collapsed ? label : undefined} onClick={onNavigate}>
-   <Icon size={18} strokeWidth={1.7} /><span>{label}</span>
+   <Icon size={18} strokeWidth={1.7} /><span>{href === '/workflows' && session?.user?.role === 'member' ? '我的任务' : label}</span>
   </Link>);
  }
  return <aside id="workspace-sidebar" className="af-sidebar">
@@ -57,7 +61,7 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate, desk
     <div className="af-nav-tool-list">{links(TOOLS)}</div>
    </details>
   </nav>
-  <footer className="af-sidebar-bottom"><nav aria-label="工作区设置">{links(SETTINGS)}</nav>
+  <footer className="af-sidebar-bottom"><nav aria-label="工作区设置">{links(SETTINGS)}{links([{ label: '我的账号', href: '/account', icon: Settings2 }, ...(isAdmin ? [{ label: '用户与邀请', href: '/admin/users', icon: ShieldAlert }] : [])])}</nav>
    {footerExtra}
    <div className="af-sidebar-meta"><span>v{manifest.version}</span><button type="button" className="af-icon-button" aria-label={collapsed ? '展开侧栏' : '收起侧栏'} title={collapsed ? '展开侧栏' : '收起侧栏'} onClick={()=>onCollapsedChange(!collapsed)}>
     {collapsed ? <ChevronsRight size={17} /> : <ChevronsLeft size={17} />}</button></div>

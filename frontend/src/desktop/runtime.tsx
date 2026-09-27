@@ -3,7 +3,7 @@ import { useAppStore } from '@/stores/appStore';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { desktopRuntime, type DesktopConfig, type DesktopPreferences, type DesktopState } from '@/lib/desktop-runtime';
 
-export type Connection = { ready: boolean; url: string; release_version: string; problem_sets: boolean; error?: string };
+export type Connection = { ready: boolean; auth_required?: boolean; url: string; release_version: string; problem_sets: boolean; error?: string };
 export type ExportRecord = { id: string; name: string; path: string; status: string; bytes: number; total: number; error?: string; created: string };
 export function boot() {
  const value = desktopRuntime();
@@ -12,9 +12,8 @@ export function boot() {
 }
 export async function nativeRequest<T>(path: string, body?: unknown): Promise<T> {
  const headers: Record<string, string> = {};
+ if (boot().state.service_url) headers['X-Qraft-Service'] = boot().state.service_url;
  if (body !== undefined) headers['Content-Type'] = 'application/json';
- const token = localStorage.getItem('algoforge_token');
- if (path === 'download' && token) headers.Authorization = 'Bearer ' + token;
  const response = await fetch(boot().base + '/native/' + path, {
   method: body === undefined ? 'GET' : 'POST', headers,
   body: body === undefined ? undefined : JSON.stringify(body),
@@ -108,8 +107,7 @@ export function DesktopProvider({ children }: { children: React.ReactNode }) {
  }, []);
  async function saveConfig(config: DesktopConfig) {
   await nativeRequest('config', config);
-  // A token from one service must never be sent to a newly selected service.
-  localStorage.removeItem('algoforge_token');
+  // The reload below discards account state and data from the previous service.
   // Start setup where the user needs to act; the reload also discards old service caches.
   if (!state.configured || config.mode === 'local') {
    window.history.replaceState({}, '', boot().ui_base + (config.mode === 'local' ? '/desktop/settings?tab=local' : '/'));

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Gingoo-TvT/Qraft/backend/internal/access"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -82,6 +83,8 @@ func NewProblemRepository(db *pgxpool.Pool) *ProblemRepository {
 // ProblemFilter defines the criteria for querying problems. Nil pointer fields
 // are treated as "no filter" for that dimension.
 type ProblemFilter struct {
+	Search             string
+	OrderDirection     string
 	Level              *domain.ProblemLevel
 	MinDiff            *int
 	MaxDiff            *int
@@ -346,6 +349,9 @@ func findByTitleQuery() string {
 // controls in the API layer.
 func (r *ProblemRepository) List(ctx context.Context, filter ProblemFilter) ([]*domain.Problem, int, error) {
 	conditions, args, argIdx := buildProblemListWhere(filter)
+	if p, ok := access.FromContext(ctx); ok && !p.IsAdmin() {
+		conditions = append(conditions, "status = 'published'", "NOT EXISTS (SELECT 1 FROM problem_quarantine_records qr WHERE qr.problem_id=problems.id)")
+	}
 
 	whereClause := ""
 	if len(conditions) > 0 {
@@ -361,18 +367,7 @@ func (r *ProblemRepository) List(ctx context.Context, filter ProblemFilter) ([]*
 
 	// Determine ordering. Default to created_at DESC for a sensible default
 	// that surfaces newly created problems first.
-	orderBy := "created_at DESC"
-	allowedOrders := map[string]string{
-		"created_at": "created_at DESC",
-		"difficulty": "difficulty ASC",
-		"title":      "title ASC",
-		"updated_at": "updated_at DESC",
-	}
-	if filter.OrderBy != "" {
-		if o, ok := allowedOrders[filter.OrderBy]; ok {
-			orderBy = o
-		}
-	}
+	orderBy := problemListOrder(filter)
 
 	// Apply sane defaults for pagination to avoid unbounded result sets.
 	limit := filter.Limit
@@ -481,10 +476,33 @@ func mergeReviewQuarantineReason(metadata json.RawMessage, reason string) (json.
 	return json.Marshal(values)
 }
 
+func problemListOrder(filter ProblemFilter) string {
+	column, direction := "created_at", "DESC"
+	switch filter.OrderBy {
+	case "created_at", "updated_at":
+		column = filter.OrderBy
+	case "title", "difficulty", "serial_number":
+		column, direction = filter.OrderBy, "ASC"
+	}
+	switch strings.ToUpper(filter.OrderDirection) {
+	case "ASC":
+		direction = "ASC"
+	case "DESC":
+		direction = "DESC"
+	}
+	return column + " " + direction + ", id " + direction
+}
+
 func buildProblemListWhere(filter ProblemFilter) ([]string, []interface{}, int) {
 	var conditions []string
 	var args []interface{}
 	argIdx := 1
+	if search := strings.TrimSpace(filter.Search); search != "" {
+		literal := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(search)
+		conditions = append(conditions, fmt.Sprintf("(title ILIKE $%d OR serial_number::text = $%d)", argIdx, argIdx+1))
+		args = append(args, "%"+literal+"%", search)
+		argIdx += 2
+	}
 
 	if filter.Level != nil {
 		conditions = append(conditions, fmt.Sprintf("level = $%d", argIdx))
