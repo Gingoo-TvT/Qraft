@@ -16,6 +16,7 @@ import (
 	"github.com/Gingoo-TvT/Qraft/backend/internal/llm"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/rating"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/repository"
+	"github.com/Gingoo-TvT/Qraft/backend/internal/sources"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"go.temporal.io/sdk/activity"
@@ -28,8 +29,11 @@ type Dependencies struct {
 	// workflow before its result is written. The worker supplies this callback
 	// so activities can repair child ownership after Temporal retention without
 	// changing workflow payloads or replay history.
-	PersistWorkflowOwner    func(context.Context, string) error
-	RatingStore             rating.Store
+	PersistWorkflowOwner func(context.Context, string) error
+	RatingStore          rating.Store
+	SourceFetcher        interface {
+		Fetch(context.Context, string) (*sources.Document, error)
+	}
 	ProblemSetRepo          *repository.ProblemSetRepository
 	LLM                     LLMCompleter
 	LLMProvider             string

@@ -1,3 +1,4 @@
+import SourceDifficulty from './SourceDifficulty';
 import { OUTCOME_LABELS, groupLabel, helpLabel, stateLabel } from './labels';
 import type { Assessment, Workspace } from '@/lib/rating-types';
 import { BulletList, Message, Panel, dateLabel, estimateLabel } from './Primitives';
@@ -11,6 +12,7 @@ export function Overview({ workspace, assessment }: { workspace: Workspace; asse
   { title: '正式 rating', value: workspace.official ? String(workspace.official.rating) : '暂定', note: workspace.official?.stale ? '旧版本，等待重新确认' : '由管理员确认' },
  ];
  return <div className="space-y-6"><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(card => <section className="forge-card" key={card.title}><h2 className="text-sm text-[var(--dm)]">{card.title}</h2><p className="my-3 text-2xl font-semibold">{card.value}</p><p className="text-xs text-[var(--dm)]">{card.note}</p></section>)}</div>
+  <SourceDifficulty reference={workspace.subject.source_reference ?? (!assessment?.stale ? report?.source_reference : undefined)} />
   {assessment?.stale && <Message>题目或验证材料已变化。本报告属于旧版本，不能用于当前正式评分；请重新评估。</Message>}
   <Panel title="证据概览" description="不同模型负责寻找和检验解法证据；不会靠人数投票决定 rating。">
    {!report ? <p className="text-sm text-[var(--dm)]">尚无评估报告。启动评估后，可以在其他页面继续工作，任务会由服务端持续执行。</p> : <>

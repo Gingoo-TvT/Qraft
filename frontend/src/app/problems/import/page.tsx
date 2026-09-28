@@ -174,7 +174,7 @@ export default function ProblemImportPage() {
      {!running && <button type="button" className="forge-btn-secondary" onClick={newBatch}>新建导入</button>}
     </div>
    </div>
-   <p className="af-hint">重复项自动跳过。新导入只由模型给出参考难度，不做 KC 校准或外部平台对齐；难度估计失败不会阻止题目和数据保存。恢复时保留已入库题目。</p>
+   <p className="af-hint">重复项自动跳过。优先核对原站难度，并参考有来源或人工确认的题目校正估分；缺少依据时标为暂定参考。难度估计失败不会阻止题目和数据保存。恢复时保留已入库题目。</p>
    {report.error && <p role="alert" className="text-sm text-danger-600">{report.error}</p>}
    <ol className="divide-y divide-[var(--dl)]">
     {(report.items ?? []).map((item, index) => <li key={item.item_id || index} className="py-4">
@@ -205,7 +205,7 @@ export default function ProblemImportPage() {
      <div className="grid gap-3 sm:grid-cols-2">
       <label className={'cursor-pointer rounded-lg border p-4 ' + (mode === 'preserve_statement' ? 'border-[var(--da)] bg-[var(--dg)]' : 'border-[var(--dl)]')}>
        <span className="flex items-center gap-2 font-medium"><input type="radio" name="import-mode" checked={mode === 'preserve_statement'} onChange={() => setMode('preserve_statement')} disabled={busy} />原题导入</span>
-       <span className="af-hint mt-2 block">保留题意和来源，由模型整理为标准 OJ 题面并校验样例；必要修订保留说明。去重、重新生成并验证数据；模型直接估计参考难度，不进行校准。</span>
+       <span className="af-hint mt-2 block">保留题意和来源，由模型整理为标准 OJ 题面并校验样例；必要修订保留说明。去重、重新生成并验证数据；优先保留原站难度，结合独立来源与人工确认的参照题校正参考值。</span>
       </label>
       <label className={'cursor-pointer rounded-lg border p-4 ' + (mode === 'inspiration' ? 'border-[var(--da)] bg-[var(--dg)]' : 'border-[var(--dl)]')}>
        <span className="flex items-center gap-2 font-medium"><input type="radio" name="import-mode" checked={mode === 'inspiration'} onChange={() => setMode('inspiration')} disabled={busy} />作为创意生成</span>
@@ -236,6 +236,7 @@ export default function ProblemImportPage() {
      <ol className="mt-4 divide-y divide-[var(--dl)]">{candidates.map(item => <li key={item.item_id} className="py-4">
       <label className="flex items-start gap-3"><input className="mt-1" type="checkbox" checked={item.selected} disabled={busy} onChange={event => setCandidates(current => current.map(value => value.item_id === item.item_id ? { ...value, selected: event.target.checked } : value))} /><span className="min-w-0 break-words text-sm font-medium">{item.title}</span></label>
       <div className="ml-6 mt-2 flex gap-3"><button type="button" className="af-link inline-flex items-center gap-1 text-xs" disabled={busy} aria-label={'粘贴替换 ' + item.title} onClick={() => editCandidate(item)}><Pencil size={13} />粘贴替换</button><button type="button" className="inline-flex items-center gap-1 text-xs text-danger-600" disabled={busy} aria-label={'删除 ' + item.title} onClick={() => removeCandidate(item.item_id)}><Trash2 size={13} />删除</button></div>
+      {item.difficulty && <p className="ml-6 mt-1 text-xs text-[var(--dm)]">来源难度：{item.difficulty.platform} · {item.difficulty.label}（导入时由服务端复核）</p>}
       {item.source_url && <a className="af-link ml-6 mt-1 inline-flex max-w-full items-center gap-1 break-all text-xs" href={item.source_url} target="_blank" rel="noreferrer">查看来源<ExternalLink size={12} /></a>}
       {item.error && <p role="alert" className="ml-6 mt-2 break-words text-sm text-danger-600">{item.error}</p>}
       {item.statement ? <details className="ml-6 mt-2"><summary className="cursor-pointer text-xs text-[var(--dm)]">预览题面</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-[var(--ds)] p-3 text-xs leading-6">{item.statement}</pre></details> : !item.error && <p className="af-hint ml-6 mt-1">提交前读取完整题面</p>}

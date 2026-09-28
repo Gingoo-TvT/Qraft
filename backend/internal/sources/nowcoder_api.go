@@ -15,16 +15,17 @@ func parseNowcoderAPI(original string, body []byte) (*Document, error) {
 		Code *int `json:"code"`
 		Data struct {
 			Question *struct {
-				UUID    string `json:"uuid"`
-				Title   string `json:"title"`
-				Content string `json:"content"`
-				Input   string `json:"inputDesc"`
-				Output  string `json:"outputDesc"`
-				Hint    string `json:"hint"`
-				Paid    bool   `json:"paidQuestion"`
-				Hidden  bool   `json:"shield"`
-				Deleted bool   `json:"delete"`
-				Samples []struct {
+				UUID       string          `json:"uuid"`
+				Difficulty json.RawMessage `json:"difficulty"`
+				Title      string          `json:"title"`
+				Content    string          `json:"content"`
+				Input      string          `json:"inputDesc"`
+				Output     string          `json:"outputDesc"`
+				Hint       string          `json:"hint"`
+				Paid       bool            `json:"paidQuestion"`
+				Hidden     bool            `json:"shield"`
+				Deleted    bool            `json:"delete"`
+				Samples    []struct {
 					Input  string `json:"input"`
 					Output string `json:"output"`
 					Note   string `json:"note"`
@@ -87,5 +88,6 @@ func parseNowcoderAPI(original string, body []byte) (*Document, error) {
 	}
 	section("说明/提示", q.Hint)
 	item := statementItem(original, q.Title, strings.TrimSpace(b.String()), "")
+	item.Difficulty = nativeLevel("nowcoder", "nowcoder_level", strings.Trim(string(q.Difficulty), "\""), "", original)
 	return &Document{URL: original, FinalURL: original, Title: item.Title, Kind: KindProblem, Items: []Item{item}}, nil
 }

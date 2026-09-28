@@ -36,9 +36,10 @@ func parseLuoguProblem(root *html.Node, base *url.URL) (Item, error) {
 		Status   int    `json:"status"`
 		Data     struct {
 			Problem struct {
-				PID     string `json:"pid"`
-				Name    string `json:"name"`
-				Content struct {
+				PID        string          `json:"pid"`
+				Difficulty json.RawMessage `json:"difficulty"`
+				Name       string          `json:"name"`
+				Content    struct {
 					Name        string `json:"name"`
 					Background  string `json:"background"`
 					Description string `json:"description"`
@@ -91,5 +92,9 @@ func parseLuoguProblem(root *html.Node, base *url.URL) (Item, error) {
 	}
 	section("说明/提示", problem.Content.Hint)
 	statement := normalizeMarkdownReferences(strings.TrimSpace(body.String()), base)
-	return statementItem(base.String(), title, statement, ""), nil
+	item := statementItem(base.String(), title, statement, "")
+	// Preserve the native ordinal without inventing a cross-platform mapping.
+	value := strings.Trim(string(problem.Difficulty), "\"")
+	item.Difficulty = nativeLevel("luogu", "luogu_level", value, "", base.String())
+	return item, nil
 }

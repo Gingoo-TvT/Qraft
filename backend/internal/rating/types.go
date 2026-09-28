@@ -10,7 +10,8 @@ import (
 	"github.com/google/uuid"
 )
 
-const RuleVersion = "kc-rating-pilot-v1"
+const LegacyRuleVersion = "kc-rating-pilot-v1"
+const RuleVersion = "kc-rating-source-v2"
 const ReviewThreshold = 30
 
 var (
@@ -31,7 +32,8 @@ type TestArtifact struct {
 	Output       string `json:"output,omitempty"`
 }
 type Subject struct {
-	JudgeMode string `json:"judge_mode"`
+	SourceReference *SourceReference `json:"source_reference,omitempty"`
+	JudgeMode       string           `json:"judge_mode"`
 
 	ProblemID        uuid.UUID       `json:"problem_id"`
 	Hash             string          `json:"hash"`
@@ -83,20 +85,24 @@ type Path struct {
 	HumanObservations int        `json:"human_observations"`
 }
 type Anchor struct {
-	ID               uuid.UUID `json:"id"`
-	Title            string    `json:"title"`
-	SourceURL        string    `json:"source_url"`
-	Rating           int       `json:"rating"`
-	RatingSource     string    `json:"rating_source"`
-	RetrievedAt      time.Time `json:"retrieved_at"`
-	StatementSummary string    `json:"statement_summary"`
-	SolutionSummary  string    `json:"solution_summary"`
-	KCIDs            []string  `json:"kc_ids"`
-	Population       string    `json:"population"`
-	Family           string    `json:"family"`
-	ReviewedBy       string    `json:"reviewed_by"`
-	ReviewedAt       time.Time `json:"reviewed_at"`
-	SourceConfirmed  bool      `json:"source_confirmed"`
+	Basis            string           `json:"basis,omitempty"`
+	SourceReference  *SourceReference `json:"source_reference,omitempty"`
+	DecisionID       uuid.UUID        `json:"decision_id,omitempty"`
+	SubjectHash      string           `json:"subject_hash,omitempty"`
+	ID               uuid.UUID        `json:"id"`
+	Title            string           `json:"title"`
+	SourceURL        string           `json:"source_url"`
+	Rating           int              `json:"rating"`
+	RatingSource     string           `json:"rating_source"`
+	RetrievedAt      time.Time        `json:"retrieved_at"`
+	StatementSummary string           `json:"statement_summary"`
+	SolutionSummary  string           `json:"solution_summary"`
+	KCIDs            []string         `json:"kc_ids"`
+	Population       string           `json:"population"`
+	Family           string           `json:"family"`
+	ReviewedBy       string           `json:"reviewed_by"`
+	ReviewedAt       time.Time        `json:"reviewed_at"`
+	SourceConfirmed  bool             `json:"source_confirmed"`
 }
 type AnchorComparison struct {
 	AnchorID     uuid.UUID `json:"anchor_id"`
@@ -123,9 +129,10 @@ type ModelRun struct {
 	Summary    string `json:"summary"`
 }
 type Report struct {
-	SnapshotHash     string `json:"snapshot_hash"`
-	AdditionalRounds int    `json:"additional_rounds"`
-	ModelDiversity   string `json:"model_diversity"`
+	SourceReference  *SourceReference `json:"source_reference,omitempty"`
+	SnapshotHash     string           `json:"snapshot_hash"`
+	AdditionalRounds int              `json:"additional_rounds"`
+	ModelDiversity   string           `json:"model_diversity"`
 
 	RuleVersion   string             `json:"rule_version"`
 	Summary       string             `json:"summary"`

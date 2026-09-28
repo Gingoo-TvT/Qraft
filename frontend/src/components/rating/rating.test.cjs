@@ -173,3 +173,12 @@ test('unlinked human routes do not appear as measured zero observations', () => 
  assert.match(output, /尚未关联已核实的人类路线观察/);
  assert.ok(!output.includes('人类路线观察：0'));
 });
+
+test('source difficulty is distinct from model, formal rating and human observations', () => {
+ const workspace=emptyWorkspace();
+ workspace.subject.source_reference={status:'verified',reason:'已由服务端核对',difficulty:{platform:'luogu',scale:'luogu_level',value:'3',label:'原站等级 3',source_url:'https://www.luogu.com.cn/problem/P900001',fetched_at:'2026-09-01T00:00:00Z'}};
+ let output=html(report.Overview,{workspace});
+ assert.match(output,/洛谷.*原站等级 3/);assert.match(output,/不直接换算成 CF 分数/);assert.match(output,/尚无评价/);assert.match(output,/暂定/);
+ workspace.subject.source_reference.status='stale';
+ output=html(report.Overview,{workspace});assert.match(output,/待重新核对/);assert.match(output,/未作为评分依据/);
+});

@@ -9,7 +9,14 @@ export interface TestArtifact {
  input?: string;
  output?: string;
 }
+export interface SourceDifficulty {
+ platform: string; scale: string; value: string; label: string; source_url: string; fetched_at: string;
+}
+export interface SourceReference {
+ status: string; difficulty?: SourceDifficulty; statement_sha256?: string; reason?: string;
+}
 export interface Subject {
+ source_reference?: SourceReference;
  problem_id: string;
  hash: string;
  title: string;
@@ -91,6 +98,7 @@ export interface ModelRun {
  summary: string;
 }
 export interface Report {
+ source_reference?: SourceReference;
  rule_version: string;
  summary: string;
  validity: string;

@@ -29,6 +29,13 @@ func (a *Activities) GenerateStatementActivity(ctx context.Context, in GenerateS
 	activity.RecordHeartbeat(ctx, "calling LLM to generate statement")
 
 	prompt := buildStatementPromptWithOptions(in.Params, in.Neighbors, in.UseStructuredSamples)
+	if in.Params.GenerationEvidence == nil {
+		anchors, err := a.difficultyAnchors(ctx, "")
+		if err != nil {
+			return nil, fmt.Errorf("load difficulty references: %w", err)
+		}
+		prompt += difficultyContext(anchors)
+	}
 	if in.RetryFeedback != nil {
 		var repairedPrompt strings.Builder
 		repairedPrompt.WriteString(prompt)

@@ -1,6 +1,7 @@
+import type { SourceDifficulty } from './rating-types';
 import type { ImportInputItem, SourceDocument } from './problem-import-api';
 
-export type SourceCandidate = ImportInputItem & { selected: boolean; error?: string };
+export type SourceCandidate = ImportInputItem & { selected: boolean; error?: string; difficulty?: SourceDifficulty };
 type Preview = (url: string) => Promise<SourceDocument>;
 export const MAX_IMPORT_ITEMS = 50;
 
@@ -34,7 +35,7 @@ export async function previewSources(urls: string[], preview: Preview): Promise<
    return document.items.map((item, child) => ({
     item_id: 'source-' + index + '-' + child, title: item.title || document.title || '未命名题目',
     statement: item.statement ?? '', source_url: item.url || document.final_url || url,
-    source_id: item.id, selected: true,
+    source_id: item.id, difficulty: item.difficulty, selected: true,
    }));
   } catch (error) {
    return [{ item_id: 'source-' + index, title: url, statement: '', source_url: url, selected: false, error: error instanceof Error ? error.message : '链接读取失败' }];

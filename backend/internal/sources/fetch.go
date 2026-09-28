@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
 	"io"
 	"mime"
 	"net"
@@ -39,13 +40,14 @@ type Document struct {
 }
 
 type Item struct {
-	ID              string   `json:"id"`
-	URL             string   `json:"url"`
-	Title           string   `json:"title"`
-	Statement       string   `json:"statement,omitempty"`
-	Editorial       string   `json:"editorial,omitempty"`
-	StatementSHA256 string   `json:"statement_sha256,omitempty"`
-	Warnings        []string `json:"warnings,omitempty"`
+	Difficulty      *domain.SourceDifficulty `json:"difficulty,omitempty"`
+	ID              string                   `json:"id"`
+	URL             string                   `json:"url"`
+	Title           string                   `json:"title"`
+	Statement       string                   `json:"statement,omitempty"`
+	Editorial       string                   `json:"editorial,omitempty"`
+	StatementSHA256 string                   `json:"statement_sha256,omitempty"`
+	Warnings        []string                 `json:"warnings,omitempty"`
 }
 
 type Error struct {
@@ -171,6 +173,7 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Document, error) {
 			return nil, err
 		}
 		doc.FetchedAt = time.Now().UTC()
+		stampDifficulties(doc)
 		return doc, nil
 	}
 	if mediaType == "" {
@@ -194,6 +197,7 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Document, error) {
 		return nil, err
 	}
 	document.FetchedAt = time.Now().UTC()
+	stampDifficulties(document)
 	return document, nil
 }
 

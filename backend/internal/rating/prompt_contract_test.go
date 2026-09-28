@@ -128,7 +128,7 @@ func TestAnalysisPromptEnumContractDoesNotRelaxValidation(t *testing.T) {
 	if err := NormalizeAnalysis(&out); err == nil {
 		t.Fatal("duplicate path identity accepted")
 	}
-	if ModelPromptVersion != "kc-rating-prompt-v3" || RuleVersion != "kc-rating-pilot-v1" {
+	if ModelPromptVersion != "kc-rating-prompt-v3" || LegacyRuleVersion != "kc-rating-pilot-v1" || RuleVersion == LegacyRuleVersion {
 		t.Fatal("output contract revision changed scoring rules")
 	}
 }

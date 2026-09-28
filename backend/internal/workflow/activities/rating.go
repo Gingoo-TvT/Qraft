@@ -18,6 +18,7 @@ import (
 )
 
 type RatingSnapshot struct {
+	RuleVersion          string                  `json:"rule_version,omitempty"`
 	FeedbackSignals      []rating.FeedbackSignal `json:"feedback_signals,omitempty"`
 	FeedbackSnapshotHash string                  `json:"feedback_snapshot_hash,omitempty"`
 	Subject              rating.Subject          `json:"subject"`
@@ -112,45 +113,52 @@ func (a *Activities) RatingLoadActivity(ctx context.Context, in rating.WorkflowI
 	if item.ProblemID != in.ProblemID || item.Subject.Hash != in.SnapshotHash {
 		return nil, ratingInvalid(fmt.Errorf("assessment subject mismatch"))
 	}
-	if item.RuleVersion != rating.RuleVersion {
+	if item.RuleVersion != rating.RuleVersion && item.RuleVersion != rating.LegacyRuleVersion {
 		return nil, ratingInvalid(fmt.Errorf("unsupported rating rules"))
 	}
-	anchors, err := a.deps.RatingStore.ListAnchors(ctx)
+	if item.RuleVersion == rating.LegacyRuleVersion {
+		anchors, e := a.deps.RatingStore.ListAnchors(ctx)
+		if e != nil {
+			return nil, e
+		}
+		feedback, e := a.deps.RatingStore.ListFeedback(ctx, item.ProblemID, item.Subject.Hash)
+		if e != nil {
+			return nil, e
+		}
+		for i := range item.Subject.Tests {
+			test := &item.Subject.Tests[i]
+			if test.IsSample {
+				test.Input, test.Output, e = a.ratingTestBytes(ctx, *test)
+				if e != nil {
+					return nil, e
+				}
+			}
+		}
+		if e = a.deps.RatingStore.UpdateAssessment(ctx, in.AssessmentID, "running", "blind_solving", nil, ""); e != nil {
+			return nil, e
+		}
+		return a.ratingWrite(ctx, RatingSnapshot{RuleVersion: rating.LegacyRuleVersion, Subject: item.Subject, Anchors: rating.SelectAnchors(anchors, "", 6), FeedbackSignals: rating.FeedbackSignals(feedback), FeedbackSnapshotHash: rating.FeedbackSnapshotHash(feedback)}, "snapshot")
+	}
+	source := rating.SourceFromMetadata(item.Subject.Metadata, item.Subject.Statement)
+	if source == nil || source.Status != "verified" {
+		source = a.resolveSourceDifficulty(ctx, item.Subject.Metadata, item.Subject.Statement)
+	}
+	item.Subject.SourceReference = source
+	excluded := ""
+	if source != nil && source.Difficulty != nil {
+		excluded = source.Difficulty.SourceURL
+	}
+	reviewed, err := a.difficultyAnchors(ctx, excluded)
 	if err != nil {
 		return nil, err
 	}
-	// Current KC IDs and legacy tags do not share a verified taxonomy.
-	// Select a transparent, deterministic spread of reviewed difficulties instead
-	// of pretending string equality establishes structural similarity. Analysis
-	// may mark any of these incomparable; no target difficulty is used here.
-	sort.Slice(anchors, func(i, j int) bool {
-		if anchors[i].Rating != anchors[j].Rating {
-			return anchors[i].Rating < anchors[j].Rating
-		}
-		return anchors[i].ID.String() < anchors[j].ID.String()
-	})
-	candidates := make([]rating.Anchor, 0, len(anchors))
-	families := map[string]bool{}
-	sources := map[string]bool{}
-	for _, x := range anchors {
-		family := x.Family
-		if family == "" {
-			family = x.SourceURL
-		}
-		if !x.SourceConfirmed || x.ReviewedBy == "" || x.ReviewedAt.IsZero() || families[family] || sources[x.SourceURL] {
-			continue
-		}
-		families[family] = true
-		sources[x.SourceURL] = true
-		candidates = append(candidates, x)
-	}
-	reviewed := candidates
-	if len(candidates) > 6 {
-		reviewed = make([]rating.Anchor, 6)
-		for i := range reviewed {
-			reviewed[i] = candidates[i*(len(candidates)-1)/5]
+	kept := reviewed[:0]
+	for _, anchor := range reviewed {
+		if anchor.ID != item.ProblemID {
+			kept = append(kept, anchor)
 		}
 	}
+	reviewed = kept
 	feedback, err := a.deps.RatingStore.ListFeedback(ctx, item.ProblemID, item.Subject.Hash)
 	if err != nil {
 		return nil, err
@@ -171,7 +179,7 @@ func (a *Activities) RatingLoadActivity(ctx context.Context, in rating.WorkflowI
 	if err := a.deps.RatingStore.UpdateAssessment(ctx, in.AssessmentID, "running", "blind_solving", nil, ""); err != nil {
 		return nil, err
 	}
-	return a.ratingWrite(ctx, RatingSnapshot{Subject: item.Subject, Anchors: reviewed, FeedbackSignals: rating.FeedbackSignals(feedback), FeedbackSnapshotHash: rating.FeedbackSnapshotHash(feedback)}, "snapshot")
+	return a.ratingWrite(ctx, RatingSnapshot{RuleVersion: item.RuleVersion, Subject: item.Subject, Anchors: reviewed, FeedbackSignals: rating.FeedbackSignals(feedback), FeedbackSnapshotHash: rating.FeedbackSnapshotHash(feedback)}, "snapshot")
 }
 func (a *Activities) ratingTestBytes(ctx context.Context, t rating.TestArtifact) (string, string, error) {
 	input, output := t.Input, t.Output
@@ -340,7 +348,11 @@ func (a *Activities) RatingAnalyzeActivity(ctx context.Context, in RatingAnalyze
 	if err := rating.NormalizeAnalysis(&analysis); err != nil {
 		return nil, ratingInvalid(err)
 	}
-	report := rating.Report{RuleVersion: rating.RuleVersion, SnapshotHash: snap.Subject.Hash, Summary: analysis.Summary, KCs: analysis.KCs, Paths: analysis.Paths, Anchors: snap.Anchors, Comparisons: analysis.Comparisons, Disagreements: analysis.Disagreements, Limitations: analysis.Limitations, Models: []rating.ModelRun{}, Evidence: []rating.Evidence{}, AdditionalRounds: in.Round}
+	version := snap.RuleVersion
+	if version == "" {
+		version = rating.LegacyRuleVersion
+	}
+	report := rating.Report{SourceReference: snap.Subject.SourceReference, RuleVersion: version, SnapshotHash: snap.Subject.Hash, Summary: analysis.Summary, KCs: analysis.KCs, Paths: analysis.Paths, Anchors: snap.Anchors, Comparisons: analysis.Comparisons, Disagreements: analysis.Disagreements, Limitations: analysis.Limitations, Models: []rating.ModelRun{}, Evidence: []rating.Evidence{}, AdditionalRounds: in.Round}
 	for _, b := range blinds {
 		report.Models = append(report.Models, b.Model)
 		report.Evidence = append(report.Evidence, b.Evidence)

@@ -139,7 +139,9 @@ func parseDocument(original, finalURL, mediaType string, body []byte) (*Document
 		editorial = cleanMarkdown((&markdownRenderer{base: base}).render(editorialNode, 0))
 	}
 	doc.Title = title
-	doc.Items = append(doc.Items, statementItem(finalURL, title, statement, editorial))
+	item := statementItem(finalURL, title, statement, editorial)
+	item.Difficulty = pageDifficulty(root, base)
+	doc.Items = append(doc.Items, item)
 	return doc, nil
 }
 

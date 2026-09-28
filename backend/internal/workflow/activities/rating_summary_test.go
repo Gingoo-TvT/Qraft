@@ -109,7 +109,7 @@ func TestRatingAnalyzeActivityNormalizesSummaryButKeepsKCGates(t *testing.T) {
 			if len(report.Paths) != 2 || report.Paths[0].Validation != "candidate" || report.Paths[0].HumanObservations != 0 || report.Estimate.Representative != nil {
 				t.Fatal("display normalization promoted unverified rating evidence")
 			}
-			if model.calls != 1 || model.request.MaxTokens != 18000 || model.request.System != rating.AnalysisSystemPrompt || model.request.PromptVersion != rating.ModelPromptVersion || report.RuleVersion != rating.RuleVersion {
+			if model.calls != 1 || model.request.MaxTokens != 18000 || model.request.System != rating.AnalysisSystemPrompt || model.request.PromptVersion != rating.ModelPromptVersion || report.RuleVersion != rating.LegacyRuleVersion {
 				t.Fatal("prompt identity/scoring-rule boundary changed")
 			}
 			var modelRef ArtifactRef
@@ -132,7 +132,7 @@ func TestRatingPromptsPinOutputTypesWithoutChangingScoringRule(t *testing.T) {
 	if !strings.Contains(rating.AnalysisSystemPrompt, "summary 必须是单个字符串") || !strings.Contains(rating.BlindSystemPrompt, "uncertainties 必须是字符串数组") {
 		t.Fatal("model output field types remain ambiguous")
 	}
-	if rating.ModelPromptVersion == rating.RuleVersion || rating.RuleVersion != "kc-rating-pilot-v1" {
+	if rating.ModelPromptVersion == rating.RuleVersion || rating.LegacyRuleVersion != "kc-rating-pilot-v1" || rating.RuleVersion == rating.LegacyRuleVersion {
 		t.Fatal("prompt revision must not invalidate stored scoring rules")
 	}
 }

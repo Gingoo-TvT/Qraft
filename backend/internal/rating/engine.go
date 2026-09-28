@@ -127,7 +127,7 @@ func EstimateReference(anchors []Anchor, comparisons []AnchorComparison) Referen
 	out := ReferenceEstimate{Status: "insufficient_anchors", Notes: []string{"CF 风格参考区间，不是统计置信区间或官方评分。"}}
 	valid := map[string]Anchor{}
 	for _, a := range anchors {
-		if a.SourceConfirmed && a.ReviewedBy != "" && !a.ReviewedAt.IsZero() && a.Rating > 0 && a.SourceURL != "" {
+		if ValidAnchor(a) {
 			valid[a.ID.String()] = a
 		}
 	}
@@ -253,9 +253,14 @@ func NeedsAdditionalRound(r Report) bool {
 	return false
 }
 func NormalizeReport(r *Report) {
-	r.RuleVersion = RuleVersion
+	if r.RuleVersion != LegacyRuleVersion {
+		r.RuleVersion = RuleVersion
+	}
 	r.ModelDiversity = ModelDiversity(r.Models)
 	r.Estimate = EstimateReference(r.Anchors, r.Comparisons)
+	if r.RuleVersion != LegacyRuleVersion {
+		ApplySourceReference(r)
+	}
 	r.Validity = "needs_review"
 	for _, p := range r.Paths {
 		if p.Validation == "tested" && p.ConstraintScope == "full" && p.Kind != "misleading" {
@@ -281,7 +286,7 @@ func NormalizeReport(r *Report) {
 		r.Estimate.Lower = nil
 		r.Estimate.Upper = nil
 		r.Estimate.Representative = nil
-		if r.Estimate.Status == "provisional" {
+		if r.Estimate.Status == "provisional" || r.Estimate.Status == "source_reference" || r.Estimate.Status == "native_category_reference" {
 			r.Estimate.Status = "needs_review"
 			r.Estimate.Notes = append(r.Estimate.Notes, "路径可行性或模型争议尚未解决，暂不给出数字。")
 		}

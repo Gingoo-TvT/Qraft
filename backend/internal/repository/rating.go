@@ -158,6 +158,7 @@ func (r *RatingRepository) capture(ctx context.Context, db ratingDB, id uuid.UUI
 		Tests                                []rating.TestArtifact
 		Constraints                          map[string]json.RawMessage
 	}{s.Title, s.Statement, s.JudgeMode, checkerSource, s.TimeLimit, s.MemoryLimit, s.Tests, constraints}
+	s.SourceReference = rating.SourceFromMetadata(s.Metadata, s.Statement)
 	s.Hash = ratingHash(ratingJSON(identity))
 	_, err = db.Exec(ctx, "INSERT INTO rating_subjects(problem_id,subject_hash,payload) VALUES($1,$2,$3) ON CONFLICT DO NOTHING", id, s.Hash, ratingJSON(s))
 	return s, err
@@ -273,6 +274,10 @@ func (r *RatingRepository) CreateAnchor(ctx context.Context, a rating.Anchor, ac
 	if len(ratingJSON(a)) > 128<<10 {
 		return a, ratingInvalid("anchor is too large")
 	}
+	a.Basis = "manual"
+	a.SourceReference = nil
+	a.DecisionID = uuid.Nil
+	a.SubjectHash = ""
 	a.ID = uuid.New()
 	a.ReviewedBy = actor
 	a.ReviewedAt = time.Now().UTC()

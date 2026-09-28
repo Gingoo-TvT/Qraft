@@ -41,6 +41,13 @@ func (a *Activities) LLMReviewActivity(
 		in.ResourceCalibration,
 	)
 
+	if in.Params.GenerationEvidence == nil {
+		anchors, err := a.difficultyAnchors(ctx, "")
+		if err != nil {
+			return nil, fmt.Errorf("load difficulty references: %w", err)
+		}
+		prompt += difficultyContext(anchors)
+	}
 	req := &llm.Request{
 		MaxTokens: 4096,
 		System:    reviewSystemPromptForParams(in.Params),

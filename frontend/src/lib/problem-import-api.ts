@@ -1,7 +1,8 @@
+import type { SourceDifficulty } from './rating-types';
 import { APIError, getApiBaseUrl } from './api';
 import { serviceFetch } from './auth-session';
 
-export type SourceItem = { id: string; url: string; title: string; statement?: string; statement_sha256?: string; warnings?: string[] };
+export type SourceItem = { difficulty?: SourceDifficulty; id: string; url: string; title: string; statement?: string; statement_sha256?: string; warnings?: string[] };
 export type SourceDocument = { url: string; final_url: string; title: string; kind: 'problem' | 'collection'; items: SourceItem[]; warnings?: string[] };
 export type ImportMode = 'inspiration' | 'preserve_statement';
 export type ImportInputItem = { item_id: string; title: string; statement: string; source_url?: string; source_id?: string };
