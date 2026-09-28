@@ -90,7 +90,32 @@ func ValidAnchor(a Anchor) bool {
 // A repeated import or another member of the same source family cannot inflate
 // coverage. Selection is deterministic and does not use an LLM's guessed score.
 func SelectAnchors(all []Anchor, excludedURL string, limit int) []Anchor {
-	items := append([]Anchor(nil), all...)
+	// Resolve duplicate representations before rating-order sampling. A current
+	// human decision must not lose merely because its score is higher.
+	unique := map[string]Anchor{}
+	authority := func(a Anchor) int {
+		if a.Basis == "admin_decision" {
+			return 2
+		}
+		if a.Basis == "external_source" {
+			return 0
+		}
+		return 1
+	}
+	for _, a := range all {
+		if !ValidAnchor(a) {
+			continue
+		}
+		key := anchorSourceIdentity(a)
+		previous, exists := unique[key]
+		if !exists || authority(a) > authority(previous) || (authority(a) == authority(previous) && (a.ReviewedAt.After(previous.ReviewedAt) || (a.ReviewedAt.Equal(previous.ReviewedAt) && a.ID.String() < previous.ID.String()))) {
+			unique[key] = a
+		}
+	}
+	items := make([]Anchor, 0, len(unique))
+	for _, a := range unique {
+		items = append(items, a)
+	}
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].Rating != items[j].Rating {
 			return items[i].Rating < items[j].Rating
@@ -104,10 +129,11 @@ func SelectAnchors(all []Anchor, excludedURL string, limit int) []Anchor {
 		if family == "" {
 			family = a.SourceURL
 		}
-		if !ValidAnchor(a) || (a.SourceURL == excludedURL || (excludedURL != "" && a.SourceReference != nil && a.SourceReference.Difficulty != nil && a.SourceReference.Difficulty.SourceURL == excludedURL)) || families[family] || sources[a.SourceURL] {
+		identity := anchorSourceIdentity(a)
+		if !ValidAnchor(a) || (excludedURL != "" && identity == sourceIdentity(excludedURL)) || families[family] || sources[identity] {
 			continue
 		}
-		families[family], sources[a.SourceURL] = true, true
+		families[family], sources[identity] = true, true
 		result = append(result, a)
 	}
 	if limit <= 0 || len(result) <= limit {
@@ -166,4 +192,32 @@ func EstimateNativeCategory(source *SourceReference, anchors []Anchor) Reference
 	sort.Ints(values)
 	low, high, mid := values[0], values[len(values)-1], values[len(values)/2]
 	return ReferenceEstimate{Status: "native_category_reference", Lower: &low, Upper: &high, Representative: &mid, Notes: []string{"同一原站等级的有效人工确认分数范围，仅作经验参照，不是官方换算或统计置信区间。"}}
+}
+
+// A source problem may have both an upstream snapshot and an administrator
+// decision, or URL aliases. It still contributes only one reference identity.
+func anchorSourceIdentity(a Anchor) string {
+	raw := a.SourceURL
+	if a.SourceReference != nil && a.SourceReference.Difficulty != nil {
+		raw = a.SourceReference.Difficulty.SourceURL
+	}
+	return sourceIdentity(raw)
+}
+func sourceIdentity(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	host := strings.ToLower(u.Hostname())
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if host == "codeforces.com" || strings.HasSuffix(host, ".codeforces.com") {
+		if len(parts) == 4 && (parts[0] == "contest" || parts[0] == "gym") && parts[2] == "problem" {
+			return "codeforces:" + parts[1] + ":" + parts[3]
+		}
+		if len(parts) == 4 && parts[0] == "problemset" && parts[1] == "problem" {
+			return "codeforces:" + parts[2] + ":" + parts[3]
+		}
+	}
+	u.Fragment = ""
+	return u.String()
 }

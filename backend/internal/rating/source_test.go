@@ -70,3 +70,15 @@ func TestNativeCategoryLearnsOnlyFromIndependentHumanDecisions(t *testing.T) {
 	anchors[2].Basis = "model"
 	require.Nil(t, EstimateNativeCategory(source, anchors).Representative)
 }
+
+func TestSourceIdentityDeduplicatesHumanAndUpstreamReferences(t *testing.T) {
+	source := testSourceReference()
+	upstream := Anchor{ID: uuid.New(), Basis: "external_source", SourceReference: source, Rating: 800, SourceURL: source.Difficulty.SourceURL, Family: "cf-contest"}
+	human := Anchor{ID: uuid.New(), Basis: "admin_decision", SourceReference: source, Rating: 1000, SourceURL: "qraft://problems/synthetic", Family: "reviewed-arithmetic", DecisionID: uuid.New(), SubjectHash: "current", ReviewedBy: "synthetic", ReviewedAt: time.Unix(100, 0)}
+	selected := SelectAnchors([]Anchor{upstream, human}, "", 6)
+	require.Len(t, selected, 1)
+	require.Equal(t, 1000, selected[0].Rating)
+	require.Equal(t, "admin_decision", selected[0].Basis)
+	alias := "https://codeforces.com/contest/900001/problem/A?locale=en"
+	require.Empty(t, SelectAnchors([]Anchor{upstream, human}, alias, 6))
+}
