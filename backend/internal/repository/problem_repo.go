@@ -115,13 +115,14 @@ type ReviewQuarantineRecord struct {
 
 // PublicReleaseApprovalReport is the auditable result returned to the caller.
 type PublicReleaseApprovalReport struct {
-	ProblemID        uuid.UUID            `json:"problem_id"`
-	ArtifactID       uuid.UUID            `json:"artifact_id"`
-	ApprovalID       uuid.UUID            `json:"approval_id"`
-	ApprovedBy       string               `json:"approved_by"`
-	ApprovedAt       time.Time            `json:"approved_at"`
-	ReleaseStatus    domain.ProblemStatus `json:"release_status"`
-	QuarantineReason string               `json:"release_quarantine_reason,omitempty"`
+	ProblemID        uuid.UUID              `json:"problem_id"`
+	ArtifactID       uuid.UUID              `json:"artifact_id"`
+	ApprovalID       uuid.UUID              `json:"approval_id"`
+	ApprovedBy       string                 `json:"approved_by"`
+	ApprovedAt       time.Time              `json:"approved_at"`
+	ReleaseStatus    domain.ProblemStatus   `json:"release_status"`
+	QuarantineReason string                 `json:"release_quarantine_reason,omitempty"`
+	ManualReview     *ManualReleaseApproval `json:"manual_review,omitempty"`
 }
 
 // Create inserts a new problem into the database. The problem's ID, CreatedAt,
@@ -338,7 +339,7 @@ func findByTitleQuery() string {
 				  AND COALESCE(metadata_json ->> 'stale', 'false') <> 'true'
 				  AND NOT EXISTS (
 				      SELECT 1 FROM problem_quarantine_records quarantine
-				      WHERE quarantine.problem_id = problems.id
+				      WHERE quarantine.problem_id = problems.id AND NOT problem_manual_release_approved(problems.id)
 				  )
 				ORDER BY created_at DESC
 				LIMIT $2`
@@ -350,7 +351,7 @@ func findByTitleQuery() string {
 func (r *ProblemRepository) List(ctx context.Context, filter ProblemFilter) ([]*domain.Problem, int, error) {
 	conditions, args, argIdx := buildProblemListWhere(filter)
 	if p, ok := access.FromContext(ctx); ok && !p.IsAdmin() {
-		conditions = append(conditions, "status = 'published'", "NOT EXISTS (SELECT 1 FROM problem_quarantine_records qr WHERE qr.problem_id=problems.id)")
+		conditions = append(conditions, "status = 'published'", "NOT EXISTS (SELECT 1 FROM problem_quarantine_records qr WHERE qr.problem_id=problems.id AND NOT problem_manual_release_approved(problems.id))")
 	}
 
 	whereClause := ""
@@ -537,7 +538,7 @@ func buildProblemListWhere(filter ProblemFilter) ([]string, []interface{}, int) 
 		conditions = append(conditions, "status <> 'quarantined'")
 		conditions = append(conditions, `NOT EXISTS (
 			SELECT 1 FROM problem_quarantine_records quarantine
-			WHERE quarantine.problem_id = problems.id
+			WHERE quarantine.problem_id = problems.id AND NOT problem_manual_release_approved(problems.id)
 		)`)
 	}
 	if filter.ExcludeRejected {
@@ -751,6 +752,10 @@ func (r *ProblemRepository) ApprovePublicRelease(
 	id uuid.UUID,
 	actor string,
 ) (PublicReleaseApprovalReport, error) {
+	return r.approvePublicRelease(ctx, id, actor, nil)
+}
+
+func (r *ProblemRepository) approvePublicRelease(ctx context.Context, id uuid.UUID, actor string, manual *ManualReleaseOptions) (PublicReleaseApprovalReport, error) {
 	actor = strings.TrimSpace(actor)
 	if actor == "" {
 		return PublicReleaseApprovalReport{}, fmt.Errorf("approval actor is required")
@@ -763,8 +768,9 @@ func (r *ProblemRepository) ApprovePublicRelease(
 	defer tx.Rollback(ctx) //nolint:errcheck // rollback on committed tx is a no-op
 
 	var currentStatus domain.ProblemStatus
+	var currentUpdatedAt time.Time
 	if err := tx.QueryRow(ctx, `
-		SELECT status FROM problems WHERE id=$1 FOR UPDATE`, id).Scan(&currentStatus); err != nil {
+		SELECT status, updated_at FROM problems WHERE id=$1 FOR UPDATE`, id).Scan(&currentStatus, &currentUpdatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PublicReleaseApprovalReport{}, fmt.Errorf("problem %s not found: %w", id, sql.ErrNoRows)
 		}
@@ -776,11 +782,15 @@ func (r *ProblemRepository) ApprovePublicRelease(
 			"%w: problem status %s is not reviewable", ErrPublicReleaseApprovalConflict, currentStatus)
 	}
 
+	if manual != nil && !currentUpdatedAt.Equal(manual.ExpectedUpdatedAt) {
+		return PublicReleaseApprovalReport{}, fmt.Errorf("%w: problem changed; refresh before approving", ErrPublicReleaseApprovalConflict)
+	}
 	prerequisites, err := readPublicationGatePrerequisites(ctx, tx, id)
 	if err != nil {
 		return PublicReleaseApprovalReport{}, err
 	}
-	if reasons := prerequisites.blockingReasons(); len(reasons) > 0 {
+	reasons := prerequisites.blockingReasons()
+	if manual == nil && len(reasons) > 0 {
 		return PublicReleaseApprovalReport{}, fmt.Errorf("%w: %s", ErrPublicReleaseApprovalConflict, strings.Join(reasons, "; "))
 	}
 
@@ -792,7 +802,10 @@ func (r *ProblemRepository) ApprovePublicRelease(
 		return PublicReleaseApprovalReport{}, fmt.Errorf("checking automated review quarantine: %w", err)
 	}
 	if reviewQuarantined {
-		return PublicReleaseApprovalReport{}, ErrReviewQuarantineProtected
+		if manual == nil {
+			return PublicReleaseApprovalReport{}, ErrReviewQuarantineProtected
+		}
+		reasons = append(reasons, "automated LLM review rejected candidate")
 	}
 
 	var artifactID uuid.UUID
@@ -915,14 +928,23 @@ func (r *ProblemRepository) ApprovePublicRelease(
 	if !lineageAllowed {
 		return report, fmt.Errorf("%w: artifact lineage is not eligible for public release", ErrPublicReleaseApprovalConflict)
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return report, fmt.Errorf("committing public release approval: %w", err)
-	}
-
 	operationKey := "operator-public-release:" + report.ApprovalID.String() + ":gate-v2"
-	report.ReleaseStatus, report.QuarantineReason, err = r.ApplyPublicReleaseGate(ctx, id, operationKey)
+	if manual != nil {
+		report.ManualReview, err = recordManualRelease(ctx, tx, id, actor, *manual, reasons)
+		if err != nil {
+			return report, err
+		}
+		operationKey = "operator-manual-release:" + report.ManualReview.ApprovalID.String()
+	}
+	report.ReleaseStatus, report.QuarantineReason, err = applyPublicReleaseGateTx(ctx, tx, id, operationKey)
 	if err != nil {
 		return report, fmt.Errorf("re-running publication gate after approval: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		if isProblemEditSerializationFailure(err) {
+			return report, fmt.Errorf("%w: problem changed; refresh before approving", ErrPublicReleaseApprovalConflict)
+		}
+		return report, fmt.Errorf("committing public release approval: %w", err)
 	}
 	return report, nil
 }
@@ -994,7 +1016,17 @@ func (r *ProblemRepository) ApplyPublicReleaseGate(ctx context.Context, id uuid.
 		return "", "", fmt.Errorf("beginning public release gate transaction: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // rollback on committed tx is a no-op
+	status, reason, err := applyPublicReleaseGateTx(ctx, tx, id, operationKey)
+	if err != nil {
+		return "", "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", "", fmt.Errorf("committing public release gate: %w", err)
+	}
+	return status, reason, nil
+}
 
+func applyPublicReleaseGateTx(ctx context.Context, tx pgx.Tx, id uuid.UUID, operationKey string) (domain.ProblemStatus, string, error) {
 	prerequisites, err := readPublicationGatePrerequisites(ctx, tx, id)
 	if err != nil {
 		return "", "", err
@@ -1022,7 +1054,15 @@ func (r *ProblemRepository) ApplyPublicReleaseGate(ctx context.Context, id uuid.
 	} else if err != nil {
 		return "", "", fmt.Errorf("evaluating public release provenance gate: %w", err)
 	}
-	status, reason := publicationGateDecision(bindingFound, allowed, prerequisites.blockingReasons()...)
+	blockers := prerequisites.blockingReasons()
+	var manuallyApproved bool
+	if err := tx.QueryRow(ctx, `SELECT problem_manual_release_approved($1::uuid)`, id).Scan(&manuallyApproved); err != nil {
+		return "", "", err
+	}
+	if manuallyApproved {
+		blockers = nil
+	}
+	status, reason := publicationGateDecision(bindingFound, allowed, blockers...)
 
 	tag, err := tx.Exec(ctx, updateProblemPublicationGateSQL(), id, status, policyVersion, reason)
 	if err != nil {
@@ -1084,9 +1124,6 @@ func (r *ProblemRepository) ApplyPublicReleaseGate(ctx context.Context, id uuid.
 		return "", "", fmt.Errorf("enqueueing problem publication outbox event: %w", err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return "", "", fmt.Errorf("committing public release gate: %w", err)
-	}
 	return status, reason, nil
 }
 

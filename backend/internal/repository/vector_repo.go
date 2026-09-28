@@ -463,7 +463,7 @@ func s5OriginalityQueryV1SQL() string {
 					  OR COALESCE(pe.metadata_json ->> 'stale', 'false') = 'true'
 					  OR EXISTS (
 						  SELECT 1 FROM problem_quarantine_records quarantine
-						  WHERE quarantine.problem_id = p.id
+						  WHERE quarantine.problem_id = p.id AND NOT problem_manual_release_approved(p.id)
 					  )
 					THEN 'quarantine_advisory'
 					WHEN p.status = 'published' THEN 'historical_advisory'
@@ -692,7 +692,7 @@ func findSimilarExceptQuery() string {
 		  )
 		  AND NOT EXISTS (
 		      SELECT 1 FROM problem_quarantine_records quarantine
-		      WHERE quarantine.problem_id = p.id
+		      WHERE quarantine.problem_id = p.id AND NOT problem_manual_release_approved(p.id)
 		  )
 		  AND (pe.embedding <=> $1) <= $5
 		ORDER BY distance ASC
@@ -720,7 +720,7 @@ func findSimilarQuery() string {
 		  )
 		  AND NOT EXISTS (
 		      SELECT 1 FROM problem_quarantine_records quarantine
-		      WHERE quarantine.problem_id = p.id
+		      WHERE quarantine.problem_id = p.id AND NOT problem_manual_release_approved(p.id)
 		  )
 		  AND (pe.embedding <=> $1) <= $4
 		ORDER BY distance ASC

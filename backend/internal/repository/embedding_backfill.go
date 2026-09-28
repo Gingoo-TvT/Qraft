@@ -524,7 +524,7 @@ WITH current_statement AS (
       AND NOT EXISTS (
           SELECT 1
           FROM problem_quarantine_records quarantine
-          WHERE quarantine.problem_id = p.id
+          WHERE quarantine.problem_id = p.id AND NOT problem_manual_release_approved(p.id)
       )
 ),
 candidate_state AS (
@@ -604,7 +604,7 @@ WITH current_solution AS (
       AND NOT EXISTS (
           SELECT 1
           FROM problem_quarantine_records quarantine
-          WHERE quarantine.problem_id = p.id
+          WHERE quarantine.problem_id = p.id AND NOT problem_manual_release_approved(p.id)
       )
 ),
 candidate_state AS (

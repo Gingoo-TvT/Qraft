@@ -3,7 +3,7 @@
 本文说明 Qraft 工作区的主要 HTTP 接口。客户端可连接自行部署或已有的兼容服务。
 
 - **默认 Base URL：** `http://localhost:18180/api/v1`。连接远程服务时替换为管理员提供的地址。
-- **访问方式：** 当前源码使用邮箱密码登录和可撤销 Cookie 会话；写操作携带会话绑定的 CSRF token。成员只操作自己的任务，管理员管理账号、全局配置和共享内容。稳定 V2.2.0 后端尚无该模块。
+- **访问方式：** 当前源码使用邮箱密码登录和可撤销 Cookie 会话；写操作携带会话绑定的 CSRF token。成员只操作自己的任务，管理员管理账号、全局配置和共享内容。账号模块从 V2.3.0 配套后端提供。
 - **响应格式：** 普通 JSON 接口使用 `APIResponse`；能力发现接口直接返回 JSON，文件下载和事件流使用各自内容类型。
 
 本文保留 `algoforge.*` schema、`ALGOFORGE_*` 配置名与兼容响应头，便于已有客户端继续调用。示例中的地址、模型名和题目仅用于说明，请使用自己的工作区和模型设置。
@@ -1775,3 +1775,15 @@ GET /problem-imports/:id 返回 status、items、counts、problem_set_id。逐�
 题集测试包的 GET/POST 请求支持可选查询参数 `id_prefix` 与 `start_index`，例如 `?mode=testing&format=generic&id_prefix=Demo&start_index=50`。前缀允许 0–24 位 ASCII 字母、数字、下划线、连字符；起点默认为 1，范围 1–999999，整套题末尾也不能越界。仅传起点时前缀为空；两个参数均省略则继续使用默认稳定编号。自定义编程题号形如 `DemoP050`，混合题型沿用 X/T/P 类型标记并共享递增序号。
 
 参数同时适用于通用与 Hydro 测试包，校验失败返回 400。正式发布导出不接受这些参数。编号只影响本次下载：通用包的 Excel、测试点和数据目录同步使用 `import_code`，Hydro 使用 `hydro_pid`；`problem-set.json` 的可选 `numbering` 记录所用前缀与起点。题库记录与发布状态不变。
+
+### 管理员人工审核发布（V2.3.0）
+
+`POST /api/v1/problems/{id}/public-release-approval` 需要管理员会话和 CSRF token。
+
+```json
+{"approved":true,"override_quality":true,"expected_updated_at":"当前题目的 updated_at","note":"可选审核说明"}
+```
+
+显式 `override_quality` 允许覆盖当前自动质量拦截；服务器记录审核身份、时间、题目及程序/测试/自动审核快照、未通过项。请求中的审核人字段无效。旧页面提交返回 409，刷新后重新核对；缺少明确确认或版本返回 400；普通成员返回 403。省略覆盖参数仍执行原有严格门禁，自动审核设置不会覆盖质量。来源下架和不允许发布的权利状态仍返回冲突。
+
+成功后返回 `release_status: published` 和 `manual_review`。人工决定不修改自动审核、测试或生成凭据；内容或相关证据变化后需要重新审核。历史自动拒绝记录不可改写，导出仍要求真实可用的测试文件。

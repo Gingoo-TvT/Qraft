@@ -54,7 +54,7 @@ docker compose up -d --wait --wait-timeout 360 api worker
 
 所有默认主机端口绑定回环地址，主要入口为 18180。服务间通过内部网络通信，沙箱不公开端口。题库存于 PostgreSQL，任务历史存于 Temporal，题目文件存于 MinIO；删除数据卷会删除相应数据。
 
-当前源码提供管理员邀请注册的共享工作区，成员共享已发布题库，只管理自己的任务。公网部署先运行 `python3 scripts/configure.py --shared`，配置 HTTPS 反向代理，再显式重建并重启匹配版本服务。代理同时转发 Web 与 `/api/*`，客户端填写 HTTPS 根地址。不要公开开发模式或数据库、Temporal、MinIO 管理端口；完整流程见[账号与权限](shared-service-auth.md)。V2.2.0 后端发行包没有该模块，不能只改环境变量就获得认证。
+当前源码提供管理员邀请注册的共享工作区，成员共享已发布题库，只管理自己的任务。公网部署先运行 `python3 scripts/configure.py --shared`，配置 HTTPS 反向代理，再显式重建并重启匹配版本服务。代理同时转发 Web 与 `/api/*`，客户端填写 HTTPS 根地址。不要公开开发模式或数据库、Temporal、MinIO 管理端口；完整流程见[账号与权限](shared-service-auth.md)。旧 V2.2.0 后端没有账号模块，须升级到配套 V2.3.0 版本。
 
 ## 停止与升级
 

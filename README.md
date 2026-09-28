@@ -25,23 +25,15 @@ Windows 原生窗口与 Web 共用业务界面。客户端负责交互，服务�
 
 ![Qraft 首次使用：选择自己的工作区](docs/assets/welcome.png)
 
-## 开发中 · 题目评估
+## V2.3.0 · 团队共享、来源难度与人工审核
 
-独立盲解、KC 多路径分析、沙箱证据与人工反馈汇总，帮助解释题目难度及潜在捷径。正式评级由管理员确认，可以用于搜索和组卷；新实例不预置真值锚点或用户数据。此功能尚未进入下面的稳定发行包，详见[题目评估指南](docs/problem-rating.md)。
+- **团队账号**：管理员邀请注册，Web 与桌面统一登录，共享题库、隔离各自任务。
+- **题目评估**：优先参考原站难度，结合已有来源题目与人工正式评分校正；人工评价和管理员确认值独立保留。
+- **人工审核**：管理员可确认当前题目并覆盖自动质量拦截，保留原始证据及本次决定；修复网页编辑、分页、导出和图片显示。
 
-## 开发中 · 团队共享服务
+[查看完整发行说明](docs/releases/v2.3.0.md) · [下载 V2.3.0](https://github.com/Gingoo-TvT/Qraft/releases/tag/v2.3.0)
 
-管理员邀请注册，成员使用邮箱和密码登录；共享题库、各自管理任务，管理员统一管理模型与内容。Web 与桌面共用账号流程，邀请和会话可撤销。此功能需要配套的新源码服务端，**尚未进入 V2.2.1 客户端 / V2.2.0 后端发行包**。详见[账号与权限指南](docs/shared-service-auth.md)和[公网部署指南](docs/cloud-deployment.md)。
-
-## V2.2.1 · 服务连接恢复，创作不中断
-
-- **页面正常打开**：本机后端尚未启动或正在启动时，点击创作、题库等入口不再误显示客户端设置。
-- **需求继续保留**：停留在当前页面时，连接状态恢复不会清空已填写的需求；标签加载失败可原地重试。
-- **只需更新客户端**：继续使用 V2.2.0 后端，已有部署无需重新导入镜像包或重建题库。
-
-[查看完整发行说明](docs/releases/v2.2.1.md) · [下载 V2.2.1](https://github.com/Gingoo-TvT/Qraft/releases/tag/v2.2.1)
-
-> v2.2.0 可通过客户端内置更新升级；v2.1.0 首次仍需手动安装新版。V2.2.1 配套后端仍为 **V2.2.0**，统一搜索需要该后端接口；客户端更新不会升级后端。
+V2.3.0 提供配套客户端与后端包。客户端内置更新不会自动升级后端；升级服务前备份并等待任务结束，保留原数据库及资料目录。真实 Rating 效果与人类试点仍需单独验证，详见[题目评估指南](docs/problem-rating.md)。
 
 ## 选择适合你的使用方式
 
@@ -71,7 +63,7 @@ Windows 原生窗口与 Web 共用业务界面。客户端负责交互，服务�
 ## 三步开始
 
 1. **下载** [最新 Release](https://github.com/Gingoo-TvT/Qraft/releases/latest) 中的 Windows 安装包或便携 ZIP。便携版解压后运行 `Qraft.exe`。
-2. **选择使用方式**：连接已有服务时填写根地址；自行部署时按界面导入 Release 配套的后端包并启动（V2.2.1 使用 V2.2.0 后端包）。
+2. **选择使用方式**：连接已有服务时填写根地址；自行部署时按界面导入 Release 配套的后端包并启动（V2.3.0 使用配套 V2.3.0 后端包）。
 3. **配置并创作**：独立部署者先设置模型和去重服务，之后在工作台写下出题需求。
 
 连接已有服务时不需要下载后端镜像包。模型通过你配置的 API 调用，不要求本地 GPU。完整步骤、WebView2 安装、数据位置与升级方式见 [Windows 使用指南](docs/windows-desktop.md)。
@@ -114,7 +106,7 @@ make backend-up
 
 ## 文档导航
 
-[V2.2.1 发行说明](docs/releases/v2.2.1.md) · [使用客户端](docs/windows-desktop.md) · [自部署](docs/self-hosting.md) · [公网部署](docs/cloud-deployment.md) · [主题扩展](docs/desktop-themes.md) · [题集生成](docs/problem-set-generation.md) · [组卷](docs/problem-set-assembly.md) · [数据生成框架](docs/testdata-framework.md) · [题目评估](docs/problem-rating.md) · [账号与权限](docs/shared-service-auth.md) · [API 参考](docs/api-reference.md) · [架构](docs/architecture.md) · [开发](docs/development.md)
+[V2.3.0 发行说明](docs/releases/v2.3.0.md) · [使用客户端](docs/windows-desktop.md) · [自部署](docs/self-hosting.md) · [公网部署](docs/cloud-deployment.md) · [主题扩展](docs/desktop-themes.md) · [题集生成](docs/problem-set-generation.md) · [组卷](docs/problem-set-assembly.md) · [数据生成框架](docs/testdata-framework.md) · [题目评估](docs/problem-rating.md) · [账号与权限](docs/shared-service-auth.md) · [API 参考](docs/api-reference.md) · [架构](docs/architecture.md) · [开发](docs/development.md)
 
 ## 当前边界
 
@@ -132,4 +124,4 @@ Qraft 的项目代码采用 [MIT License](LICENSE)。第三方组件保留各自
 题集详情提供 **通用 ZIP** 和 **Hydro ZIP**。通用包包含与导入模板一致的 19 列混合题型 Excel、12 列测试点配置及 `datas/题目编号/` 数据；支持上传目标 OJ 的标签 JSON，按有效 ID/完整路径/唯一名称匹配，保留无法匹配的说明。编程题按六档 rating 规则导出，原始分数继续保留。Hydro 包用于纯编程题库。两种下载均保留数据验证检查，不自动发布题目。详情见 [题集测试包说明](docs/source-import-export.md)。
 
 
-原题导入支持保留已完成结果并继续未完成项目。导入难度采用模型直接估计，不运行 KC 校准；参考难度失败不影响题目和新数据保存。完整规则见 [来源导入与测试导出](docs/source-import-export.md)。
+原题导入支持保留已完成结果并继续未完成项目。导入难度优先保留原站难度，并参考有效来源和人工正式评分进行校正；参考难度失败不影响题目和新数据保存。完整规则见 [来源导入与测试导出](docs/source-import-export.md)。

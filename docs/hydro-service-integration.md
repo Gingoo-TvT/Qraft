@@ -2,7 +2,7 @@
 
 Qraft 可以导出普通编程题的 Hydro 包。你可以从题目详情下载，也可以通过 API 获取、预检后上传到自己的 Hydro 服务。
 
-默认服务入口为 `http://localhost:18180/api/v1`。当前源码的共享服务先用受邀账号登录取得 HttpOnly Cookie 会话，写请求额外发送 X-CSRF-Token。成员只能查询自己的生成任务及导出有权访问的共享内容；管理员可操作全局内容。详见[账号 API](api-reference.md#账号会话)。V2.2.0 后端发行包尚不包含账号模块，必须升级配套源码。
+默认服务入口为 `http://localhost:18180/api/v1`。当前源码的共享服务先用受邀账号登录取得 HttpOnly Cookie 会话，写请求额外发送 X-CSRF-Token。成员只能查询自己的生成任务及导出有权访问的共享内容；管理员可操作全局内容。详见[账号 API](api-reference.md#账号会话)。账号模块从 V2.3.0 配套后端提供，旧版需要升级。
 
 本期不提供长期机器 Token；自动化使用专用受邀账号与短期会话。下列 curl 示例省略登录步骤：共享服务应附加 -b cookie-jar，POST 再附加 X-CSRF-Token。Cookie jar 只存本机私密临时目录，完成后退出会话并删除文件。
 

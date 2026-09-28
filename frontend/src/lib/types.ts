@@ -203,6 +203,9 @@ export interface ProblemEditRefreshReport {
 
 export interface PublicReleaseApprovalRequest {
   approved: true;
+  override_quality?: boolean;
+  expected_updated_at?: string;
+  note?: string;
 }
 
 export interface PublicReleaseApprovalReport {
@@ -213,6 +216,13 @@ export interface PublicReleaseApprovalReport {
   approved_at: string;
   release_status: ProblemStatus;
   release_quarantine_reason?: string;
+  manual_review?: {
+    approval_id: string;
+    approved_by: string;
+    approved_at: string;
+    note?: string;
+    overridden_checks: string[];
+  };
 }
 
 // ---------------------------------------------------------------------------

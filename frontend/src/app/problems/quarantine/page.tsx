@@ -128,7 +128,7 @@ export default function QuarantinePage() {
     <div className="af-page">
       <PageHeader title="隔离区" description="查看暂缓发布的题目，按具体原因补齐材料、修复并审核。" actions={<RefreshButton onClick={refresh} loading={loading} />} />
       <section className="af-table-panel">
-        <div className="af-toolbar"><SectionHeading title="待处理题目" description="隔离题目不会进入普通题库或 Hydro 导出；满足全部门禁后可在详情页审核发布。" /><span className="forge-badge bg-[var(--ds)] text-[var(--dm)]">{loading ? '读取中…' : error ? '暂时不可用' : total + ' 道题目'}</span></div>
+        <div className="af-toolbar"><SectionHeading title="待处理题目" description="隔离题目不会进入普通题库；管理员可在详情页人工核对后审核发布，原始质量记录保留。" /><span className="forge-badge bg-[var(--ds)] text-[var(--dm)]">{loading ? '读取中…' : error ? '暂时不可用' : total + ' 道题目'}</span></div>
         {error && <div role="alert" className="m-5 rounded-lg border border-danger-400/30 bg-danger-50 p-4 text-sm text-danger-600 dark:bg-danger-500/10 dark:text-danger-400">{error}<button type="button" className="ml-3 underline" onClick={refresh}>重试</button></div>}
         <div className="af-table-scroll">
         <table className="forge-table min-w-[1000px]">

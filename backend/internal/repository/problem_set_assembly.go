@@ -44,7 +44,7 @@ func (r *ProblemSetRepository) ListAssemblyCandidates(ctx context.Context, filte
    p.statement
   FROM problems p LEFT JOIN rating_official ro ON ro.problem_id=p.id
   WHERE p.status='published' AND btrim(p.statement) <> ''
-   AND NOT EXISTS (SELECT 1 FROM problem_quarantine_records qr WHERE qr.problem_id=p.id)
+   AND NOT EXISTS (SELECT 1 FROM problem_quarantine_records qr WHERE qr.problem_id=p.id AND NOT problem_manual_release_approved(p.id))
    AND (CASE WHEN $8='official' THEN ro.rating ELSE p.difficulty END) BETWEEN $4 AND $5
    AND 'programming'=ANY($1::text[])
   UNION ALL
@@ -139,7 +139,7 @@ func (r *ProblemSetRepository) CreateAssembled(ctx context.Context, set *domain.
 		var id uuid.UUID
 		if ref.Type == domain.QuizTypeProgramming {
 			err = tx.QueryRow(ctx, `SELECT p.id FROM problems p WHERE p.id=$1 AND p.updated_at=$2 AND p.status='published'
-    AND NOT EXISTS (SELECT 1 FROM problem_quarantine_records q WHERE q.problem_id=p.id) FOR SHARE OF p`, ref.ID, ref.UpdatedAt).Scan(&id)
+    AND NOT EXISTS (SELECT 1 FROM problem_quarantine_records q WHERE q.problem_id=p.id AND NOT problem_manual_release_approved(p.id)) FOR SHARE OF p`, ref.ID, ref.UpdatedAt).Scan(&id)
 		} else {
 			err = tx.QueryRow(ctx, `SELECT id FROM quiz_problems WHERE id=$1 AND updated_at=$2 AND type=$3 AND (NOT $4 OR visibility='public') FOR SHARE`, ref.ID, ref.UpdatedAt, ref.Type, member).Scan(&id)
 		}

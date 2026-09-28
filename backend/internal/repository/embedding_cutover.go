@@ -358,7 +358,7 @@ WITH eligible AS (
       AND NOT EXISTS (
           SELECT 1
           FROM problem_quarantine_records quarantine
-          WHERE quarantine.problem_id = p.id
+          WHERE quarantine.problem_id = p.id AND NOT problem_manual_release_approved(p.id)
       )
 ),
 target_rows AS (

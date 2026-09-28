@@ -313,8 +313,8 @@ func (h *ProblemHandler) HandleCompleteEditRefresh(c echo.Context) error {
 // HandleApprovePublicRelease: POST /problems/:id/public-release-approval
 //
 // Records an administrator's explicit release approval and then re-runs the
-// normal provenance and quality gate. The approval never bypasses automated
-// review quarantine or missing release prerequisites.
+// provenance gate. An explicit current-revision quality override preserves
+// the automatic review evidence and records a separate human decision.
 func (h *ProblemHandler) HandleApprovePublicRelease(c echo.Context) error {
 	id, err := parseUUID(c, "id")
 	if err != nil {
@@ -327,7 +327,10 @@ func (h *ProblemHandler) HandleApprovePublicRelease(c echo.Context) error {
 	}
 
 	var request struct {
-		Approved bool `json:"approved"`
+		Approved          bool      `json:"approved"`
+		OverrideQuality   bool      `json:"override_quality"`
+		ExpectedUpdatedAt time.Time `json:"expected_updated_at"`
+		Note              string    `json:"note"`
 	}
 	if err := c.Bind(&request); err != nil {
 		return badRequest(c, "INVALID_BODY", "failed to parse request body: "+err.Error())
@@ -339,7 +342,7 @@ func (h *ProblemHandler) HandleApprovePublicRelease(c echo.Context) error {
 	report, err := h.problemService.ApprovePublicRelease(
 		c.Request().Context(),
 		id,
-		service.PublicReleaseApprovalInput{Approved: true, Actor: actor},
+		service.PublicReleaseApprovalInput{Approved: true, Actor: actor, OverrideQuality: request.OverrideQuality, ExpectedUpdatedAt: request.ExpectedUpdatedAt, Note: request.Note},
 	)
 	if err != nil {
 		if errors.Is(err, service.ErrNotFound) {

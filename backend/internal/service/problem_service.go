@@ -208,8 +208,11 @@ type ProblemEditRefreshInput struct {
 // PublicReleaseApprovalInput is the explicit administrator decision. Actor is
 // derived from authenticated context and Approved must be true.
 type PublicReleaseApprovalInput struct {
-	Approved bool
-	Actor    string
+	Approved          bool
+	Actor             string
+	OverrideQuality   bool
+	ExpectedUpdatedAt time.Time
+	Note              string
 }
 
 // ListProblems returns a paginated, filtered list of problems.
@@ -349,7 +352,7 @@ func (s *ProblemService) CompleteProblemEditRefresh(
 }
 
 // ApprovePublicRelease records an administrator approval and re-enters the
-// ordinary publication gate. It does not bypass quality prerequisites.
+// ordinary publication gate. Only an explicit human decision can waive quality prerequisites.
 func (s *ProblemService) ApprovePublicRelease(
 	ctx context.Context,
 	id uuid.UUID,
@@ -363,7 +366,16 @@ func (s *ProblemService) ApprovePublicRelease(
 		return repository.PublicReleaseApprovalReport{}, fmt.Errorf("validation: approval actor is required")
 	}
 
-	report, err := s.problemRepo.ApprovePublicRelease(ctx, id, actor)
+	if input.OverrideQuality && (input.ExpectedUpdatedAt.IsZero() || len([]rune(input.Note)) > 2000) {
+		return repository.PublicReleaseApprovalReport{}, fmt.Errorf("validation: expected_updated_at is required and note must not exceed 2000 characters")
+	}
+	var report repository.PublicReleaseApprovalReport
+	var err error
+	if input.OverrideQuality {
+		report, err = s.problemRepo.ApprovePublicReleaseWithQualityOverride(ctx, id, actor, repository.ManualReleaseOptions{ExpectedUpdatedAt: input.ExpectedUpdatedAt, Note: input.Note})
+	} else {
+		report, err = s.problemRepo.ApprovePublicRelease(ctx, id, actor)
+	}
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return report, ErrNotFound

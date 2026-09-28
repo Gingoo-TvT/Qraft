@@ -10,10 +10,10 @@ import (
 	"strings"
 )
 
-const Version = "2.2.1"
+const Version = "2.3.0"
 
 // Client-only patches can keep the previously published, verified backend bundle.
-const BackendVersion = "2.2.0"
+const BackendVersion = "2.3.0"
 
 type Config struct {
 	SchemaVersion int    `json:"schema_version"`

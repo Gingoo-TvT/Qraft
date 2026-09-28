@@ -37,7 +37,7 @@ WITH candidates AS (
         p.difficulty, '' AS quiz_difficulty, p.level::text AS level, p.status, p.updated_at
     FROM problems p
     WHERE p.status NOT IN ('quarantined','rejected')
-        AND NOT EXISTS (SELECT 1 FROM problem_quarantine_records qr WHERE qr.problem_id=p.id)
+        AND NOT EXISTS (SELECT 1 FROM problem_quarantine_records qr WHERE qr.problem_id=p.id AND NOT problem_manual_release_approved(p.id))
     UNION ALL
     SELECT q.id, 'quiz', q.type, q.code, q.title, COALESCE(q.tags, '{}'::text[]),
         ARRAY(

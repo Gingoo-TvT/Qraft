@@ -578,16 +578,16 @@ export default function ProblemDetailPage() {
   }, [id, refresh, refreshHash]);
 
   const handleApprovePublicRelease = useCallback(async () => {
-    if (!id) return;
+    if (!id || !problem) return;
     if (!window.confirm(
-      '确认你已核对题目来源与发布权利，并审核通过这道题吗？系统会记录本次管理员决定，再执行全部发布门禁。',
+      '确认已人工核对当前题目、来源与发布权利，并审核通过吗？本次决定会覆盖当前自动质量拦截，保留未通过项和原始证据。测试数据缺失时仍需补齐后导出。',
     )) return;
 
     setApprovingRelease(true);
     setReleaseApprovalError(null);
     setReleaseApprovalResult(null);
     try {
-      const res = await approveProblemPublicRelease(id);
+      const res = await approveProblemPublicRelease(id, { approved: true, override_quality: true, expected_updated_at: problem.updated_at });
       setReleaseApprovalResult(res.data ?? null);
       await refresh();
     } catch (err) {
@@ -597,7 +597,7 @@ export default function ProblemDetailPage() {
     } finally {
       setApprovingRelease(false);
     }
-  }, [id, refresh]);
+  }, [id, problem, refresh]);
 
   // Delete problem
   const handleDelete = useCallback(async () => {
@@ -1027,7 +1027,7 @@ export default function ProblemDetailPage() {
                 管理员审核
               </p>
               <p className="mt-1 text-xs text-anvil-500 dark:text-anvil-400">
-                点击后自动记录审核人和时间，并重新执行全部发布门禁。
+                人工确认后解除当前质量拦截，记录审核人、时间和未通过项，保留自动审核证据。
               </p>
             </div>
             <button
@@ -1046,6 +1046,12 @@ export default function ProblemDetailPage() {
           </div>
         )}
 
+        {problem.status === 'published' && problem.metadata_json?.manual_release_approval != null && (
+          <p className="mt-3 text-sm text-anvil-600 dark:text-anvil-300">
+            此题经人工审核通过；自动质量报告和未通过项保留，人工决定不代表自动验证通过。
+          </p>
+        )}
+
         {releaseApprovalError && (
           <p className="mt-3 break-words text-sm text-danger-600 dark:text-danger-300">
             {releaseApprovalError}
@@ -1053,7 +1059,7 @@ export default function ProblemDetailPage() {
         )}
         {releaseApprovalResult && (
           <p className="mt-3 rounded border border-success-300 bg-success-50 p-3 text-sm text-success-700 dark:border-success-700 dark:bg-success-500/10 dark:text-success-300">
-            审核已记录：{releaseApprovalResult.approved_by}，结果为
+            审核已记录：{releaseApprovalResult.manual_review?.approved_by ?? releaseApprovalResult.approved_by}，结果为
             {' '}{statusLabel(releaseApprovalResult.release_status)}。
           </p>
         )}
