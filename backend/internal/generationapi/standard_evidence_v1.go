@@ -128,10 +128,12 @@ func validateCurrentGenerationEvidenceContract(contract *domain.GenerationEviden
 }
 
 // isAcceptedReviewerProfileV1Descriptor keeps verification of historical
-// standard receipts compatible with the pre-visibility-boundary prompt while
+// standard receipts compatible with earlier reviewer prompts while
 // making the rotated digest the identity emitted for all new jobs.
 func isAcceptedReviewerProfileV1Descriptor(value string) bool {
-	return value == ReviewerProfileV1DescriptorSHA256 || value == ReviewerProfileV1LegacyDescriptorSHA256
+	return value == ReviewerProfileV1DescriptorSHA256 ||
+		value == ReviewerProfileV1PreNumericDescriptorSHA256 ||
+		value == ReviewerProfileV1LegacyDescriptorSHA256
 }
 
 // ValidateGenerationEvidenceContractV1 verifies the complete server-authored

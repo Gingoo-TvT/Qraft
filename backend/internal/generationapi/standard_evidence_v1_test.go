@@ -70,3 +70,27 @@ func TestGenerationStandardEvidenceV1RejectsOutcomeDrift(t *testing.T) {
 		t.Fatal("drifted standard evidence contract was accepted")
 	}
 }
+
+func TestStandardEvidenceRetainsHistoricalReviewerIdentity(t *testing.T) {
+	request := loadFixtureRequest(t)
+	request.Output.EvidenceLevel = EvidenceStandard
+	for _, descriptor := range []string{ReviewerProfileV1PreNumericDescriptorSHA256, ReviewerProfileV1LegacyDescriptorSHA256} {
+		contract := request.ToProblemGenParams().GenerationEvidence
+		contract.ReviewerProfileDescriptorSHA256 = descriptor
+		encoded, _, err := CanonicalGenerationStandardEvidenceV1(contract, domain.ProblemStatusQuarantined, OutcomeCategoryReview, []EvidenceRef{
+			{Kind: "test_manifest", SHA256: strings.Repeat("a", 64)},
+			{Kind: "review_result", SHA256: strings.Repeat("b", 64)},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Contains(encoded, []byte(descriptor)) || bytes.Contains(encoded, []byte(ReviewerProfileV1DescriptorSHA256)) {
+			t.Fatal("historical receipt was relabeled with the current reviewer")
+		}
+	}
+	unknown := request.ToProblemGenParams().GenerationEvidence
+	unknown.ReviewerProfileDescriptorSHA256 = strings.Repeat("f", 64)
+	if ValidateGenerationEvidenceContractV1(unknown) == nil {
+		t.Fatal("unknown reviewer identity accepted")
+	}
+}

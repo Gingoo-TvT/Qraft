@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Gingoo-TvT/Qraft/backend/internal/domain"
+	"github.com/Gingoo-TvT/Qraft/backend/internal/generationapi"
 	"github.com/Gingoo-TvT/Qraft/backend/internal/llm"
 	"go.temporal.io/sdk/activity"
 )
@@ -42,7 +43,7 @@ func (a *Activities) LLMReviewActivity(
 
 	req := &llm.Request{
 		MaxTokens: 4096,
-		System:    reviewSystemPrompt,
+		System:    reviewSystemPromptForParams(in.Params),
 		Messages: []llm.Message{
 			{
 				Role:    "user",
@@ -77,6 +78,19 @@ func (a *Activities) LLMReviewActivity(
 	return result, nil
 }
 
+// Do not append new instructions to already-issued reviewer contracts.
+// Historical jobs keep the pre-change behavior; new jobs and unversioned
+// product requests use the current numeric-scope guidance.
+// Unknown evidence identities are still rejected by contract validation.
+func reviewSystemPromptForParams(params domain.ProblemGenParams) string {
+	if contract := params.GenerationEvidence; contract != nil &&
+		contract.ReviewerProfileDescriptorSHA256 != generationapi.ReviewerProfileV1DescriptorSHA256 {
+		return reviewSystemPrompt
+	}
+	return reviewSystemPrompt + numericReviewGuidance
+}
+
+// Frozen visibility-boundary reviewer used by already-issued contracts.
 const reviewSystemPrompt = `You are an expert competitive programming problem reviewer. Your task is to evaluate a generated problem for quality, correctness, and suitability for a programming contest.
 
 Review-scope boundary:

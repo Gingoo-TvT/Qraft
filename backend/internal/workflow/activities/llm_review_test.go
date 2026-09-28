@@ -86,7 +86,7 @@ func TestReviewerV1DescriptorBindsKnowledgePointCombinationPrompt(t *testing.T) 
 		Input: "1\n", GroupID: 1, IsSample: true, Description: "frozen case",
 	}}
 	userPrompt := buildReviewPrompt(statement, solutions, testCases, params, nil)
-	systemDigest := sha256.Sum256([]byte(reviewSystemPrompt))
+	systemDigest := sha256.Sum256([]byte(reviewSystemPromptForParams(params)))
 	userDigest := sha256.Sum256([]byte(userPrompt))
 	descriptor, err := json.Marshal(struct {
 		SchemaVersion       string `json:"schema_version"`
@@ -217,5 +217,23 @@ func TestBuildReviewPromptWithResourceCalibrationBindsTargetSandboxEvidence(t *t
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("resource evidence prompt omitted %q:\n%s", required, prompt)
 		}
+	}
+}
+
+func TestNumericReviewPreservesHistoricalBehavior(t *testing.T) {
+	for _, descriptor := range []string{
+		generationapi.ReviewerProfileV1PreNumericDescriptorSHA256,
+		generationapi.ReviewerProfileV1LegacyDescriptorSHA256,
+	} {
+		params := domain.DefaultProblemGenParams()
+		params.GenerationEvidence = &domain.GenerationEvidenceContract{ReviewerProfileDescriptorSHA256: descriptor}
+		if got := reviewSystemPromptForParams(params); got != reviewSystemPrompt {
+			t.Fatalf("historical contract %s received new reviewer instructions", descriptor)
+		}
+	}
+	current := domain.DefaultProblemGenParams()
+	current.GenerationEvidence = &domain.GenerationEvidenceContract{ReviewerProfileDescriptorSHA256: generationapi.ReviewerProfileV1DescriptorSHA256}
+	if got := reviewSystemPromptForParams(current); got == reviewSystemPrompt || got != reviewSystemPromptForParams(domain.DefaultProblemGenParams()) {
+		t.Fatal("new jobs and unversioned requests must use the current reviewer")
 	}
 }

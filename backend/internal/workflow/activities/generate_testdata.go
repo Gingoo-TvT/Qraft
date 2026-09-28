@@ -480,17 +480,10 @@ GENERATOR ACCEPTANCE CHECKLIST:
 - Every branch emits all required fields, including n/m/t headers when the
   statement declares them, and respects both its group bounds and the global
   byte limits.
-- For fixed-decimal output, construct exact half-unit rounding ties and the
-  nearest legal inputs on both sides using exact decimal/rational arithmetic,
-  plus zero, carry and negative cases where legal. Put small representatives
-  in the actual differential subset (BruteCheck groups, or public samples when
-  no such groups exist), tagged threshold/adversarial and small_exhaustive.
-  Random floating-point inputs alone are insufficient. Match the statement's
-  tie rule and input precision; never generate out-of-domain decimals.
 - A BruteCheck branch is small enough for the independent oracle; a maximum
   branch is reserved for the main solution and is never sent to the oracle.
 - The program compiles with the selected language standard and exits normally
-  after one instance. Validate these invariants mentally before returning JSON.` + contestTestDataSkillGuidance + testdatagen.Prompt
+  after one instance. Validate these invariants mentally before returning JSON.` + numericTestDataContract + contestTestDataSkillGuidance + testdatagen.Prompt
 
 // buildTestDataPrompt constructs the user prompt for test data generation.
 func buildTestDataPrompt(statement string, config domain.TestDataConfig) string {
@@ -511,6 +504,23 @@ func buildTestDataPromptWithParams(statement string, config domain.TestDataConfi
 	sb.WriteString("\n\n")
 	sb.WriteString(knowledgePointCombinationPrompt(params, knowledgePointPromptTestData))
 	appendCrossStageGenerationInstructions(&sb, params, "test-data generator and test manifest")
+
+	if params.Level != "" || params.Difficulty > 0 || len(params.Tags) > 0 {
+		sb.WriteString("Authoring context for test design:\n")
+		if params.Level != "" {
+			sb.WriteString(fmt.Sprintf("- Requested level: %s\n", params.Level))
+		}
+		if params.Difficulty > 0 {
+			sb.WriteString(fmt.Sprintf("- Requested target difficulty: %d\n", params.Difficulty))
+			if band := DifficultyBandDescription(params.Difficulty); band != "" {
+				sb.WriteString(fmt.Sprintf("- Difficulty band: %s\n", band))
+			}
+		}
+		if len(params.Tags) > 0 {
+			sb.WriteString(fmt.Sprintf("- Requested tags: %s\n", strings.Join(params.Tags, ", ")))
+		}
+		sb.WriteString("Use this context together with the statement's intended skills. For imports, preserve the source task rather than treating provisional labels as permission to make tests harder.\n\n")
+	}
 
 	sb.WriteString("Requirements:\n")
 	if adaptive {

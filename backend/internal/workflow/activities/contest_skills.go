@@ -13,7 +13,7 @@ Algorithm Contest Problemsetter Skill:
 - Treat constraints as part of the statement language: maximum sizes must fit the intended solution, reject too-easy constraints that allow inferior complexity, and use subtasks only when they form a meaningful learning path.
 - Design tests as part of the problem, not afterthoughts: samples, basic cases, boundaries, randomized stress, structured extremes, and targeted hack cases for each plausible wrong solution.
 - Make the statement zero-ambiguity: define every variable, index base, interval boundary, duplicate/negative/self-loop/multiedge policy, no-solution rule, and multi-answer rule when applicable.
-- In difficulty justification, explicitly name the intended solution path, natural brute force, likely wrong solutions, data risks, and the tester-facing attack points.`
+- In difficulty justification, explicitly name the intended solution path, natural brute force, likely wrong solutions, data risks, and the tester-facing attack points.` + numericScopeGuidance
 
 const contestTesterSkillGuidance = `
 

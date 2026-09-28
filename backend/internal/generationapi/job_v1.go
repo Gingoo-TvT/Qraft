@@ -50,11 +50,13 @@ const (
 	// receives only contestant-visible statement content for clarity/difficulty
 	// judgments. Keep the prior digests below as accepted legacy identities so
 	// already-issued standard receipts remain verifiable.
-	ReviewerProfileDescriptorSHA256         = "1e67944bfa3d8f4fa7d1d745e2153c43226fa109e4a5f6c96ec016d151162468"
-	ReviewerProfileV1DescriptorSHA256       = "1422b3da999b425e6093f1d2a5cd3be0335d8f700b8bf3d9bb41aa9531c082bd"
-	ReviewerProfileLegacyDescriptorSHA256   = "d437fb973e27c680cc5f1fabced1243f055314e3c1f3cfd9adb2b7fecb1d1118"
-	ReviewerProfileV1LegacyDescriptorSHA256 = "e3c6cb027744d3b9edcc49d87cfcd2f722e62bb9489fec6b4671d29c2f9e53ee"
-	EvidenceProfileDescriptorSHA256         = "5c0ee4e19117c59e65aed3d81b2f7ea087b1727e3c9011f1ce3f7018aa78160b"
+	ReviewerProfileDescriptorSHA256 = "1e67944bfa3d8f4fa7d1d745e2153c43226fa109e4a5f6c96ec016d151162468"
+	// Current digest is bound to the difficulty-aligned numeric reviewer.
+	ReviewerProfileV1DescriptorSHA256           = "54ca6dd34ee70f694fcf3ce61ad2710673c0937a0de70cf37a5150658ee8e0d7"
+	ReviewerProfileV1PreNumericDescriptorSHA256 = "1422b3da999b425e6093f1d2a5cd3be0335d8f700b8bf3d9bb41aa9531c082bd"
+	ReviewerProfileLegacyDescriptorSHA256       = "d437fb973e27c680cc5f1fabced1243f055314e3c1f3cfd9adb2b7fecb1d1118"
+	ReviewerProfileV1LegacyDescriptorSHA256     = "e3c6cb027744d3b9edcc49d87cfcd2f722e62bb9489fec6b4671d29c2f9e53ee"
+	EvidenceProfileDescriptorSHA256             = "5c0ee4e19117c59e65aed3d81b2f7ea087b1727e3c9011f1ce3f7018aa78160b"
 )
 
 type ErrorCode string
